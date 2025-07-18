@@ -1,13 +1,22 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
 
 export default function TabLayout() {
+  const { user } = useAuth();
+
+  if (!user) return null;
+
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#FF4B6A',
         tabBarInactiveTintColor: '#666',
-        headerShown: false,
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: '#1a1a1a',
+        },
+        headerTintColor: '#fff',
         tabBarStyle: {
           borderTopWidth: 1,
           borderTopColor: '#333',
@@ -22,6 +31,7 @@ export default function TabLayout() {
         name="home"
         options={{
           title: 'Home',
+          headerTitle: 'AFNNY',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -31,6 +41,7 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: 'Explore',
+          headerTitle: 'Explore',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="search" size={size} color={color} />
           ),
@@ -40,6 +51,7 @@ export default function TabLayout() {
         name="matches"
         options={{
           title: 'Matches',
+          headerTitle: 'Your Matches',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="heart" size={size} color={color} />
           ),
@@ -49,6 +61,7 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: 'Chat',
+          headerTitle: 'Messages',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles" size={size} color={color} />
           ),
@@ -58,6 +71,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),

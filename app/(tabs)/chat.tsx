@@ -1,430 +1,417 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  Image,
+  FlatList,
   TouchableOpacity,
+  Image,
   TextInput,
-  Animated,
+  ActivityIndicator,
+  RefreshControl,
   Platform,
-  Dimensions,
-  StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { collection, query, where, onSnapshot, orderBy, Timestamp, getDoc, doc } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { ChatRoom, ChatMessage, ChatParticipant } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { RefreshControl } from 'react-native';
 
-const { width } = Dimensions.get('window');
+export default function ChatScreen() {
+  const { user, userData } = useAuth();
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [participants, setParticipants] = useState<Record<string, ChatParticipant>>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-const CHATS = [
-  {
-    id: '1',
-    name: 'Sarah Parker',
-    image: 'https://via.placeholder.com/100x100',
-    lastMessage: 'Would love to catch up soon! 😊',
-    time: '2m ago',
-    unread: 2,
-    online: true,
-    typing: false,
-    age: '25',
-    distance: '3 km away',
-    matchPercentage: 95,
-    lastSeen: new Date().toISOString(),
-  },
-  // ... rest of the mock data
-];
+  useEffect(() => {
+    if (!user) return;
 
-const SECTIONS = {
-  NEW_MATCHES: 'New Matches',
-  MESSAGES: 'Messages',
-};
+    // Subscribe to chat rooms - using only participants filter for now
+    const chatRoomsQuery = query(
+      collection(db, 'chatRooms'),
+      where('participants', 'array-contains', user.uid)
+    );
 
-const DEFAULT_AVATAR = 'https://via.placeholder.com/100x100';
+    const unsubscribe = onSnapshot(chatRoomsQuery, async (snapshot) => {
+      try {
+        const rooms: ChatRoom[] = [];
+        const participantIds = new Set<string>();
 
-export default function ChatsScreen() {
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [activeFilter, setActiveFilter] = React.useState('All');
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const scrollY = React.useRef(new Animated.Value(0)).current;
+        // Get all rooms and sort them in memory
+        snapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          const room = {
+            id: doc.id,
+            participants: data.participants || [],
+            lastMessage: data.lastMessage || null,
+            createdAt: data.createdAt || null,
+            updatedAt: data.updatedAt || null,
+          } as ChatRoom;
+          rooms.push(room);
+          room.participants.forEach(id => {
+            if (id !== user.uid) participantIds.add(id);
+          });
+        });
 
-  const refreshChat = React.useCallback(async () => {
-    try {
-      setIsRefreshing(true);
-      setError(null);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    } catch (err) {
-      setError('Failed to refresh chats. Please try again.');
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, []);
+        // Sort rooms by updatedAt in memory
+        rooms.sort((a, b) => {
+          const timeA = a.updatedAt?.toMillis() || 0;
+          const timeB = b.updatedAt?.toMillis() || 0;
+          return timeB - timeA;
+        });
 
-  const renderNewMatch = React.useCallback((match: typeof CHATS[0]) => (
-    <TouchableOpacity
-      key={match.id}
-      style={styles.newMatchItem}
-      onPress={() => router.push({
-        pathname: "/(tabs)/chat/[id]" as any,
-        params: { id: match.id }
-      })}
-      activeOpacity={0.7}
-    >
-      <View style={styles.newMatchAvatarWrapper}>
-        <Image
-          source={{ uri: match.image || DEFAULT_AVATAR }}
-          style={styles.newMatchAvatar}
-          defaultSource={{ uri: DEFAULT_AVATAR }}
-        />
-        {match.online && (
-          <View style={styles.onlineBadge} />
-        )}
-      </View>
-      <Text style={styles.newMatchName} numberOfLines={1}>
-        {match.name}
-      </Text>
-    </TouchableOpacity>
-  ), []);
+        setChatRooms(rooms);
 
-  const renderChatItem = React.useCallback((chat: typeof CHATS[0]) => (
-    <TouchableOpacity
-      key={chat.id}
-      style={styles.chatItem}
-      onPress={() => router.push({
-        pathname: "/(tabs)/chat/[id]" as any,
-        params: { id: chat.id }
-      })}
-      activeOpacity={0.7}
-    >
-      <View style={styles.chatAvatarContainer}>
-        <Image
-          source={{ uri: chat.image || DEFAULT_AVATAR }}
-          style={styles.chatAvatar}
-          defaultSource={{ uri: DEFAULT_AVATAR }}
-        />
-        {chat.online && <View style={styles.onlineIndicator} />}
-      </View>
-      
-      <View style={styles.chatContent}>
-        <View style={styles.chatHeader}>
-          <View style={styles.chatHeaderLeft}>
-            <Text style={styles.chatName}>{chat.name}</Text>
-            <Text style={styles.chatDistance}>{chat.distance}</Text>
-          </View>
-          <Text style={styles.chatTime}>{chat.time}</Text>
+        // Fetch participants' info
+        const participantsData: Record<string, ChatParticipant> = {};
+        const participantsPromises = Array.from(participantIds).map(async (id) => {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', id));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              participantsData[id] = {
+                id,
+                name: userData.name || 'Anonymous',
+                photo: userData.photos?.[0],
+                online: false, // You would need a separate online status system
+                lastSeen: userData.lastLoginAt,
+              };
+            }
+          } catch (error) {
+            console.error('Error fetching participant:', error);
+          }
+        });
+
+        await Promise.all(participantsPromises);
+        setParticipants(participantsData);
+      } catch (error) {
+        console.error('Error processing chat rooms:', error);
+      } finally {
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Chat rooms subscription error:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    // Add your refresh logic here
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  const handleChatPress = (chatRoom: ChatRoom) => {
+    const otherParticipantId = chatRoom.participants.find(id => id !== user?.uid);
+    if (!otherParticipantId) return;
+
+    router.push({
+      pathname: '/chat/[id]',
+      params: { id: chatRoom.id }
+    });
+  };
+
+  const getParticipantInfo = (chatRoom: ChatRoom): ChatParticipant | undefined => {
+    const otherParticipantId = chatRoom.participants.find(id => id !== user?.uid);
+    return otherParticipantId ? participants[otherParticipantId] : undefined;
+  };
+
+  const renderChatRoom = ({ item: chatRoom }: { item: ChatRoom }) => {
+    const participant = getParticipantInfo(chatRoom);
+    if (!participant) return null;
+
+    const lastMessage = chatRoom.lastMessage;
+    const isUnread = lastMessage && !lastMessage.read && lastMessage.senderId !== user?.uid;
+
+    return (
+      <TouchableOpacity
+        style={styles.chatItem}
+        onPress={() => handleChatPress(chatRoom)}
+      >
+        <View style={styles.avatarContainer}>
+          {participant.photo ? (
+            <Image source={{ uri: participant.photo }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Text style={styles.avatarText}>{participant.name[0]}</Text>
+            </View>
+          )}
+          {participant.online && <View style={styles.onlineIndicator} />}
         </View>
-        
-        <View style={styles.chatFooter}>
-          <View style={styles.messageContainer}>
-            {chat.typing ? (
-              <View style={styles.typingContainer}>
-                <Text style={styles.typingText}>typing</Text>
-                <View style={styles.typingDots}>
-                  <View style={[styles.typingDot, { animationDelay: '0ms' }]} />
-                  <View style={[styles.typingDot, { animationDelay: '200ms' }]} />
-                  <View style={[styles.typingDot, { animationDelay: '400ms' }]} />
-                </View>
-              </View>
-            ) : (
-              <Text style={styles.lastMessage} numberOfLines={1}>
-                {chat.lastMessage}
+
+        <View style={styles.chatInfo}>
+          <View style={styles.chatHeader}>
+            <Text style={styles.chatName}>{participant.name}</Text>
+            {lastMessage && (
+              <Text style={styles.timestamp}>
+                {formatTimestamp(lastMessage.createdAt)}
               </Text>
             )}
           </View>
-          {chat.unread > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{chat.unread}</Text>
+
+          {lastMessage && (
+            <View style={styles.lastMessage}>
+              <Text 
+                style={[
+                  styles.messageText,
+                  isUnread && styles.unreadText
+                ]}
+                numberOfLines={1}
+              >
+                {lastMessage.text}
+              </Text>
+              {isUnread && <View style={styles.unreadIndicator} />}
             </View>
           )}
         </View>
-      </View>
-    </TouchableOpacity>
-  ), []);
+      </TouchableOpacity>
+    );
+  };
 
-  const renderSearchBar = () => (
-    <View style={styles.searchContainer}>
-      <View style={styles.searchInputContainer}>
+  const renderEmptyComponent = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="chatbubbles-outline" size={64} color="#666" />
+      <Text style={styles.emptyText}>No conversations yet</Text>
+      <TouchableOpacity 
+        style={styles.startButton}
+        onPress={() => router.push('/explore')}
+      >
+        <Text style={styles.startButtonText}>Start Matching</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF4B6A" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search messages..."
+          placeholder="Search conversations..."
           placeholderTextColor="#666"
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
       </View>
-    </View>
-  );
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Messages</Text>
-      </View>
-
-      {renderSearchBar()}
-
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
+      {/* Chat List */}
+      <FlatList
+        data={chatRooms.filter(room => {
+          const participant = getParticipantInfo(room);
+          return participant?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        })}
+        renderItem={renderChatRoom}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.chatList}
         refreshControl={
           <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={refreshChat}
-            tintColor="#FFFFFF"
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FF4B6A"
           />
         }
-      >
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-        
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading...</Text>
-          </View>
-        ) : (
-          <>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{SECTIONS.NEW_MATCHES}</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.newMatchesContainer}
-                contentContainerStyle={styles.newMatchesContent}
-              >
-                {CHATS.slice(0, 5).map(renderNewMatch)}
-              </ScrollView>
-            </View>
+        ListEmptyComponent={renderEmptyComponent}
+      />
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{SECTIONS.MESSAGES}</Text>
-              <View style={styles.chatList}>
-                {CHATS.map(renderChatItem)}
-              </View>
-            </View>
-          </>
-        )}
-      </ScrollView>
+      {/* New Chat Button */}
+      <TouchableOpacity 
+        style={styles.newChatButton}
+        onPress={() => router.push('/explore')}
+      >
+        <LinearGradient
+          colors={['#FF4B6A', '#FF8C9F']}
+          style={styles.newChatGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <Ionicons name="add" size={24} color="white" />
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 }
 
+const formatTimestamp = (timestamp: any) => {
+  if (!timestamp) return '';
+
+  const date = timestamp.toDate();
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (days === 1) {
+    return 'Yesterday';
+  } else if (days < 7) {
+    return date.toLocaleDateString([], { weekday: 'short' });
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#1a1a1a',
   },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 44 : StatusBar.currentHeight,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-    backgroundColor: '#121212',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
   },
   searchContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: '#121212',
-  },
-  searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E1E1E',
+    padding: 12,
+    backgroundColor: '#2a2a2a',
+    marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 44,
   },
   searchIcon: {
-    marginRight: 10,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    color: '#FFFFFF',
+    color: 'white',
     fontSize: 16,
     padding: 0,
   },
-  content: {
-    flex: 1,
-  },
-  section: {
-    paddingTop: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    paddingHorizontal: 20,
-    marginBottom: 15,
-  },
-  newMatchesContainer: {
-    marginBottom: 20,
-  },
-  newMatchesContent: {
-    paddingHorizontal: 15,
-  },
-  newMatchItem: {
-    alignItems: 'center',
-    marginHorizontal: 5,
-    width: 80,
-  },
-  newMatchAvatarWrapper: {
-    position: 'relative',
-    marginBottom: 8,
-  },
-  newMatchAvatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    borderWidth: 2,
-    borderColor: '#FF4B6A',
-  },
-  onlineBadge: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: '#121212',
-  },
-  newMatchName: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    textAlign: 'center',
-    width: '100%',
-  },
   chatList: {
-    paddingHorizontal: 20,
+    paddingTop: 16,
   },
   chatItem: {
     flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#1E1E1E',
-    borderRadius: 16,
-    marginBottom: 10,
+    padding: 16,
+    alignItems: 'center',
   },
-  chatAvatarContainer: {
+  avatarContainer: {
     position: 'relative',
-    marginRight: 15,
+    marginRight: 12,
   },
-  chatAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FF4B6A',
+  },
+  avatarPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   onlineIndicator: {
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: '#4CAF50',
     borderWidth: 2,
-    borderColor: '#1E1E1E',
+    borderColor: '#1a1a1a',
   },
-  chatContent: {
+  chatInfo: {
     flex: 1,
   },
   chatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
-  },
-  chatHeaderLeft: {
-    flex: 1,
+    marginBottom: 4,
   },
   chatName: {
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 2,
   },
-  chatDistance: {
-    fontSize: 12,
+  timestamp: {
     color: '#666',
-  },
-  chatTime: {
     fontSize: 12,
-    color: '#666',
-    marginLeft: 8,
-  },
-  chatFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  messageContainer: {
-    flex: 1,
   },
   lastMessage: {
-    fontSize: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  messageText: {
     color: '#999',
-  },
-  typingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typingText: {
-    color: '#FF4B6A',
     fontSize: 14,
-    marginRight: 6,
-  },
-  typingDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typingDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#FF4B6A',
-    marginHorizontal: 2,
-    opacity: 0.5,
-  },
-  unreadBadge: {
-    backgroundColor: '#FF4B6A',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginLeft: 8,
+    flex: 1,
   },
   unreadText: {
-    color: '#FFFFFF',
-    fontSize: 12,
+    color: 'white',
     fontWeight: '600',
   },
-  errorContainer: {
-    padding: 20,
+  unreadIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF4B6A',
+    marginLeft: 8,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 32,
   },
-  errorText: {
-    color: '#FF4B6A',
-    fontSize: 14,
-    textAlign: 'center',
+  emptyText: {
+    color: '#666',
+    fontSize: 16,
+    marginTop: 16,
+    marginBottom: 24,
   },
-  loadingContainer: {
-    padding: 20,
+  startButton: {
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  startButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  newChatButton: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+  },
+  newChatGradient: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  loadingText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
 });

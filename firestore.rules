@@ -1,0 +1,117 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isFollowing(userId) {
+      return userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.following;
+    }
+    
+    function isPublicProfile(userId) {
+      return !get(/databases/$(database)/documents/users/$(userId)).data.isPrivate;
+    }
+
+    function isChatParticipant(participants) {
+      return isSignedIn() && request.auth.uid in participants;
+    }
+
+    function isUsernameUnique(username) {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        (
+          !exists(/databases/$(database)/documents/usernames/$(username)) ||
+          get(/databases/$(database)/documents/usernames/$(username)).data.uid == request.auth.uid
+        );
+    }
+
+    // Username reservations
+    match /usernames/{username} {
+      allow read: if true;  // Allow reading usernames without authentication
+      allow create, update: if isSignedIn() && 
+        request.resource.data.uid == request.auth.uid &&
+        isUsernameUnique(username);
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if true;  // Allow reading user profiles without authentication for sign-in
+      allow create: if isSignedIn() && isOwner(userId) && 
+        isUsernameUnique(request.resource.data.username);
+      // Allow updates if:
+      // 1. User is updating their own profile
+      // 2. User is updating their own following list
+      // 3. User is updating someone else's followers list (for follow/unfollow)
+      allow update: if isSignedIn() && (
+        (isOwner(userId) && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['username']) ||
+          isUsernameUnique(request.resource.data.username)
+        )) || 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['following'])) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers']))
+      );
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+
+    // Posts
+    match /posts/{postId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.userId) || 
+        isFollowing(resource.data.userId) || 
+        isPublicProfile(resource.data.userId)
+      );
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
+      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // Stories
+    match /stories/{storyId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.userId) || 
+        isFollowing(resource.data.userId)
+      );
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
+      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // Chat rooms
+    match /chatRooms/{roomId} {
+      allow read: if isSignedIn() && isChatParticipant(resource.data.participants);
+      allow create: if isSignedIn() && isChatParticipant(request.resource.data.participants);
+      allow update: if isSignedIn() && isChatParticipant(resource.data.participants);
+      allow delete: if false;
+
+      // Chat messages
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants);
+        allow create: if isSignedIn() && 
+          isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants) &&
+          request.resource.data.senderId == request.auth.uid;
+        allow update: if isSignedIn() && 
+          isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants) &&
+          (resource.data.senderId == request.auth.uid || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
+        allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Comments
+    match /posts/{postId}/comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.userId) || 
+        isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.userId)
+      );
+    }
+  }
+} 

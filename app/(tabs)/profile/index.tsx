@@ -8,296 +8,424 @@ import {
   ScrollView,
   Dimensions,
   SafeAreaView,
+  Platform,
+  FlatList,
+  ImageBackground,
+  RefreshControl,
+  Modal,
+  Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import FollowList from '../../components/FollowList';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { UserProfile } from '../../../src/types';
 
 const { width } = Dimensions.get('window');
-const PHOTO_SIZE = (width - 40) / 2;
+const PHOTO_SIZE = (width - 40) / 3;
 
-// Mock data (replace with real data from your backend)
-const USER_DATA = {
-  interests: ['Travel', 'Photography', 'Music', 'Cooking', 'Fitness', 'Art'],
-  languages: ['English', 'Spanish'],
-  education: 'Bachelor in Computer Science',
-  work: 'Software Developer at Tech Corp',
-  height: "5'9\"",
-  zodiac: 'Leo',
-  drinking: 'Social Drinker',
-  smoking: 'Non-smoker',
-  lookingFor: 'Long-term Relationship',
-  children: "Don't have children",
-  pets: 'Dog lover 🐕',
-  personality: ['Extrovert', 'Creative', 'Ambitious'],
-};
-
-// Define valid icon names type
-type IconName = 
-  | 'heart-outline'
-  | 'chatbubbles-outline'
-  | 'shield-checkmark-outline'
-  | 'filter-outline'
-  | 'infinite-outline'
-  | 'school-outline'
-  | 'briefcase-outline'
-  | 'body-outline'
-  | 'star-outline'
-  | 'wine-outline'
-  | 'leaf-outline'
-  | 'people-outline'
-  | 'paw-outline'
-  | 'image-outline';
-
-// Update the icon map with proper typing
-const iconMap: Record<string, IconName> = {
-  'heart': 'heart-outline',
-  'chat': 'chatbubbles-outline',
-  'shield': 'shield-checkmark-outline',
-  'filter': 'filter-outline',
-  'infinite': 'infinite-outline',
-  'school': 'school-outline',
-  'briefcase': 'briefcase-outline',
-  'body': 'body-outline',
-  'star': 'star-outline',
-  'wine': 'wine-outline',
-  'leaf': 'leaf-outline',
-  'people': 'people-outline',
-  'paw': 'paw-outline',
-  'image': 'image-outline'
-} as const;
-
-export default function ProfileScreen({ userId }: { userId?: string }) {
-  const { currentUser, logout } = useAuth();
-  const [showMore, setShowMore] = useState(false);
-  
-  // Check if this is the current user's profile
-  const isOwnProfile = !userId || userId === currentUser?.id;
+export default function ProfileScreen() {
+  const { user, userData, setUserData, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<'photos' | 'about' | 'likes'>('photos');
+  const [refreshing, setRefreshing] = useState(false);
+  const [showFollowList, setShowFollowList] = useState<'followers' | 'following' | null>(null);
 
   const handleLogout = async () => {
-    await logout();
-    router.replace('/(auth)/sign-in');
+    try {
+      await logout();
+      router.replace('/(auth)/sign-in');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
-  const renderInfoItem = (icon: keyof typeof iconMap, label: string, value: string) => (
-    <View style={styles.infoItem}>
-      <Ionicons name={iconMap[icon]} size={24} color="#FF4B6A" />
-      <View style={styles.infoText}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
+  const handleEditProfile = () => {
+    router.push('/profile/edit');
+  };
+
+  const handleSettings = () => {
+    router.push('/profile/settings');
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    // Add your refresh logic here
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  const handleFollowToggle = async (targetUserId: string, isFollowing: boolean) => {
+    if (!user || !userData) return;
+
+    try {
+      // Update target user's followers list first
+      await updateDoc(doc(db, 'users', targetUserId), {
+        followers: isFollowing
+          ? arrayRemove(user.uid)
+          : arrayUnion(user.uid)
+      });
+
+      // Then update current user's following list
+      await updateDoc(doc(db, 'users', user.uid), {
+        following: isFollowing 
+          ? arrayRemove(targetUserId)
+          : arrayUnion(targetUserId)
+      });
+
+      // Update local state after successful Firebase update
+      const updatedUserData = {
+        ...userData,
+        following: isFollowing
+          ? userData.following.filter(id => id !== targetUserId)
+          : [...userData.following, targetUserId]
+      };
+      setUserData(updatedUserData);
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+      Alert.alert(
+        'Error',
+        'Failed to update follow status. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleRemoveFollower = async (followerId: string) => {
+    if (!user || !userData) return;
+
+    try {
+      // Remove follower from current user's followers list first
+      await updateDoc(doc(db, 'users', user.uid), {
+        followers: arrayRemove(followerId)
+      });
+
+      // Then remove current user from follower's following list
+      await updateDoc(doc(db, 'users', followerId), {
+        following: arrayRemove(user.uid)
+      });
+
+      // Update local state after successful Firebase update
+      const updatedUserData = {
+        ...userData,
+        followers: userData.followers.filter(id => id !== followerId)
+      };
+      setUserData(updatedUserData);
+    } catch (error) {
+      console.error('Error removing follower:', error);
+      Alert.alert(
+        'Error',
+        'Failed to remove follower. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const renderInfoItem = (icon: string, title: string, value: string | undefined) => {
+    if (!value) return null;
+    return (
+      <View style={styles.infoItem}>
+        <Ionicons name={icon as any} size={24} color="#0095F6" />
+        <View style={styles.infoText}>
+          <Text style={styles.infoTitle}>{title}</Text>
+          <Text style={styles.infoValue}>{value}</Text>
+        </View>
       </View>
-    </View>
+    );
+  };
+
+  const renderPhoto = ({ item }: { item: string }) => (
+    <TouchableOpacity style={styles.photoContainer}>
+      <Image source={{ uri: item }} style={styles.photo} />
+    </TouchableOpacity>
   );
 
-  const renderOwnProfileHeader = () => (
-    <View style={styles.headerTop}>
-      <TouchableOpacity onPress={handleLogout} style={styles.headerButton}>
-        <Ionicons name="log-out-outline" size={24} color="#FF4B6A" />
-      </TouchableOpacity>
-      <TouchableOpacity 
-        onPress={() => router.push('/(tabs)/profile/settings')}
-        style={styles.headerButton}
-      >
-        <Ionicons name="settings-outline" size={24} color="#FF4B6A" />
-      </TouchableOpacity>
-    </View>
+  const renderStoryHighlight = ({ item }: { item: string }) => (
+    <TouchableOpacity style={styles.storyHighlight}>
+      <ImageBackground source={{ uri: item }} style={styles.storyImage}>
+        <LinearGradient
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
+          style={styles.storyGradient}
+        >
+          <Text style={styles.storyText}>Highlight</Text>
+        </LinearGradient>
+      </ImageBackground>
+    </TouchableOpacity>
   );
 
-  const renderOtherProfileHeader = () => (
-    <View style={styles.headerTop}>
-      <TouchableOpacity 
-        onPress={() => router.back()} 
-        style={styles.headerButton}
-      >
-        <Ionicons name="arrow-back" size={24} color="#FF4B6A" />
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderOwnProfileActions = () => (
-    <View style={styles.actionButtons}>
-      <TouchableOpacity 
-        style={[styles.actionButton, styles.editButton]}
-        onPress={() => router.push('/(tabs)/profile/edit')}
-      >
-        <Ionicons name="create-outline" size={24} color="white" />
-        <Text style={styles.actionButtonText}>Edit Profile</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderOtherUserActions = () => (
-    <View style={styles.actionButtons}>
-      <TouchableOpacity style={[styles.actionButton, styles.messageButton]}>
-        <Ionicons name={iconMap.chat} size={24} color="white" />
-        <Text style={styles.actionButtonText}>Message</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.actionButton, styles.likeButton]}>
-        <Ionicons name={iconMap.heart} size={24} color="white" />
-        <Text style={styles.actionButtonText}>Like Profile</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  if (!userData) return null;
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#1a1a1a', '#2d1f3f']}
-        style={styles.gradient}
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FF4B6A"
+          />
+        }
       >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Header Section */}
-          <View style={styles.header}>
-            {isOwnProfile ? renderOwnProfileHeader() : renderOtherProfileHeader()}
+        {/* Profile Header */}
+        <LinearGradient
+          colors={['#FF4B6A', '#FF8C9F']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerTop}>
+            <View style={styles.headerTitle}>
+              <Text style={styles.logoText}>Profile</Text>
+            </View>
+            <TouchableOpacity style={styles.settingsButton} onPress={handleSettings}>
+              <Ionicons name="settings-outline" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
 
-            <View style={styles.profileHeader}>
-              <View style={styles.avatarContainer}>
-                <LinearGradient
-                  colors={['#FF4B6A', '#FF8C9F']}
-                  style={styles.avatarGradient}
-                >
-                  <Image
-                    source={{ uri: 'https://picsum.photos/200/200' }}
-                    style={styles.avatar}
-                  />
-                </LinearGradient>
-                {isOwnProfile && (
-                  <TouchableOpacity 
-                    style={styles.editAvatarButton}
-                    onPress={() => router.push('/(tabs)/profile/edit')}
-                  >
-                    <Ionicons name="camera" size={20} color="white" />
-                  </TouchableOpacity>
-                )}
-              </View>
-              <Text style={styles.name}>{currentUser?.name}, 25</Text>
-              <View style={styles.locationContainer}>
-                <Ionicons name="location-sharp" size={16} color="#FF4B6A" />
-                <Text style={styles.location}>New York, USA • 5 miles away</Text>
-              </View>
-              <View style={styles.verifiedBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#FF4B6A" />
-                <Text style={styles.verifiedText}>Verified Profile</Text>
-              </View>
+          <View style={styles.headerContent}>
+            <View style={styles.profileImageContainer}>
+              <Image
+                source={{ 
+                  uri: userData.profilePicture || 
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=random` 
+                }}
+                style={styles.profileImage}
+              />
+              <TouchableOpacity style={styles.editPhotoButton} onPress={handleEditProfile}>
+                <Ionicons name="camera" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.headerInfo}>
+              <Text style={styles.name}>
+                {userData.name}
+                {userData.age ? `, ${userData.age}` : ''}
+              </Text>
+              <Text style={styles.username}>@{userData.username}</Text>
+              {userData.location && (
+                <View style={styles.locationContainer}>
+                  <Ionicons name="location" size={16} color="white" />
+                  <Text style={styles.location}>{userData.location}</Text>
+                </View>
+              )}
             </View>
           </View>
 
-          {/* Stats Section - Shown for both profiles */}
+          {/* Profile Stats */}
           <View style={styles.statsContainer}>
-            {[
-              { label: 'Match Rate', value: '85%', icon: 'heart' },
-              { label: 'Response Rate', value: '92%', icon: 'chat' },
-              { label: 'Active Status', value: 'Daily', icon: 'infinite' },
-            ].map((stat, index) => (
-              <View key={index} style={styles.statItem}>
-                <LinearGradient
-                  colors={['#FF4B6A', '#FF8C9F']}
-                  style={styles.statIconContainer}
-                >
-                  <Ionicons name={iconMap[stat.icon]} size={24} color="white" />
-                </LinearGradient>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-              </View>
-            ))}
+            <TouchableOpacity style={styles.statItem}>
+              <Text style={styles.statNumber}>{userData.posts?.length || 0}</Text>
+              <Text style={styles.statLabel}>Posts</Text>
+            </TouchableOpacity>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statDivider}
+            />
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => setShowFollowList('followers')}
+            >
+              <Text style={styles.statNumber}>{userData.followers?.length || 0}</Text>
+              <Text style={styles.statLabel}>Followers</Text>
+            </TouchableOpacity>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statDivider}
+            />
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => setShowFollowList('following')}
+            >
+              <Text style={styles.statNumber}>{userData.following?.length || 0}</Text>
+              <Text style={styles.statLabel}>Following</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Show these sections only for other users' profiles */}
-          {!isOwnProfile && (
-            <>
-              {/* About Section */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>About Me</Text>
-                <Text style={styles.aboutText}>
-                  Passionate about technology and creativity. Love exploring new places and meeting interesting people. 
-                  Always up for a good conversation over coffee ☕️
-                  {!showMore && '...'}
-                </Text>
-                <TouchableOpacity 
-                  style={styles.showMoreButton}
-                  onPress={() => setShowMore(!showMore)}
-                >
-                  <Text style={styles.showMoreText}>
-                    {showMore ? 'Show Less' : 'Show More'}
-                  </Text>
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleEditProfile}>
+              <Text style={styles.actionButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton}>
+              <Text style={styles.actionButtonText}>Share Profile</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+
+        {/* Story Highlights */}
+        {userData.photos && userData.photos.length > 0 && (
+          <View style={styles.highlightsContainer}>
+            <Text style={styles.highlightsTitle}>Story Highlights</Text>
+            <FlatList
+              data={userData.photos}
+              renderItem={renderStoryHighlight}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.highlightsList}
+            />
+          </View>
+        )}
+
+        {/* Profile Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'photos' && styles.activeTab]}
+            onPress={() => setActiveTab('photos')}
+          >
+            <Ionicons 
+              name="grid-outline" 
+              size={24} 
+              color={activeTab === 'photos' ? '#FF4B6A' : '#666'} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'about' && styles.activeTab]}
+            onPress={() => setActiveTab('about')}
+          >
+            <Ionicons 
+              name="person-outline" 
+              size={24} 
+              color={activeTab === 'about' ? '#FF4B6A' : '#666'} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'likes' && styles.activeTab]}
+            onPress={() => setActiveTab('likes')}
+          >
+            <Ionicons 
+              name="heart-outline" 
+              size={24} 
+              color={activeTab === 'likes' ? '#FF4B6A' : '#666'} 
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Tab Content */}
+        {activeTab === 'photos' && (
+          <View style={styles.photosContainer}>
+            {userData.photos && userData.photos.length > 0 ? (
+              <FlatList
+                data={userData.photos}
+                renderItem={renderPhoto}
+                numColumns={3}
+                scrollEnabled={false}
+                style={styles.photosGrid}
+                contentContainerStyle={styles.photosContent}
+              />
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="images-outline" size={48} color="#666" />
+                <Text style={styles.emptyStateText}>No photos yet</Text>
+                <TouchableOpacity style={styles.addButton} onPress={handleEditProfile}>
+                  <Text style={styles.addButtonText}>Add Photos</Text>
                 </TouchableOpacity>
               </View>
+            )}
+          </View>
+        )}
 
-              {/* Interests Section */}
+        {activeTab === 'about' && (
+          <View style={styles.content}>
+            {userData.bio && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>About Me</Text>
+                <Text style={styles.bio}>{userData.bio}</Text>
+              </View>
+            )}
+
+            {userData.interests && userData.interests.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Interests</Text>
                 <View style={styles.interestsContainer}>
-                  {USER_DATA.interests.map((interest, index) => (
+                  {userData.interests.map((interest, index) => (
                     <View key={index} style={styles.interestTag}>
                       <Text style={styles.interestText}>{interest}</Text>
                     </View>
                   ))}
                 </View>
               </View>
+            )}
 
-              {/* Basic Info Section */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Basic Info</Text>
-                <View style={styles.infoContainer}>
-                  {renderInfoItem('school', 'Education', USER_DATA.education)}
-                  {renderInfoItem('briefcase', 'Work', USER_DATA.work)}
-                  {renderInfoItem('body', 'Height', USER_DATA.height)}
-                  {renderInfoItem('star', 'Zodiac', USER_DATA.zodiac)}
-                </View>
-              </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Basic Info</Text>
+              <BlurView intensity={10} tint="light" style={styles.infoContainer}>
+                {renderInfoItem('school', 'Education', userData.education)}
+                {renderInfoItem('briefcase', 'Work', userData.work)}
+                {userData.languages && renderInfoItem('language', 'Languages', userData.languages.join(', '))}
+                {renderInfoItem('body', 'Height', userData.height)}
+                {renderInfoItem('star', 'Zodiac', userData.zodiac)}
+              </BlurView>
+            </View>
 
-              {/* Lifestyle Section */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Lifestyle</Text>
-                <View style={styles.infoContainer}>
-                  {renderInfoItem('wine', 'Drinking', USER_DATA.drinking)}
-                  {renderInfoItem('leaf', 'Smoking', USER_DATA.smoking)}
-                  {renderInfoItem('heart', 'Looking For', USER_DATA.lookingFor)}
-                  {renderInfoItem('people', 'Children', USER_DATA.children)}
-                  {renderInfoItem('paw', 'Pets', USER_DATA.pets)}
-                </View>
-              </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Lifestyle</Text>
+              <BlurView intensity={10} tint="light" style={styles.infoContainer}>
+                {renderInfoItem('wine', 'Drinking', userData.drinking)}
+                {renderInfoItem('leaf', 'Smoking', userData.smoking)}
+                {renderInfoItem('heart', 'Looking For', userData.lookingFor)}
+                {renderInfoItem('people', 'Children', userData.children)}
+                {renderInfoItem('paw', 'Pets', userData.pets)}
+              </BlurView>
+            </View>
 
-              {/* Personality Traits */}
+            {userData.personality && userData.personality.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Personality</Text>
                 <View style={styles.personalityContainer}>
-                  {USER_DATA.personality.map((trait, index) => (
+                  {userData.personality.map((trait, index) => (
                     <View key={index} style={styles.personalityTag}>
                       <Text style={styles.personalityText}>{trait}</Text>
                     </View>
                   ))}
                 </View>
               </View>
-            </>
-          )}
+            )}
+          </View>
+        )}
 
-          {/* Photos Section - shown for all profiles */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Photos</Text>
-            <View style={styles.photosGrid}>
-              {Array(6).fill(null).map((_, index) => (
-                <TouchableOpacity key={index} style={styles.photoContainer}>
-                  <Image
-                    source={{ uri: `https://picsum.photos/400/400?random=${index}` }}
-                    style={styles.photo}
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.7)']}
-                    style={styles.photoOverlay}
-                  >
-                    <Ionicons name="image" size={20} color="white" />
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
+        {activeTab === 'likes' && (
+          <View style={styles.likesContainer}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Recent Likes</Text>
+              <View style={styles.likesList}>
+                {/* Add your likes list here */}
+                <View style={styles.emptyState}>
+                  <Ionicons name="heart-outline" size={48} color="#666" />
+                  <Text style={styles.emptyStateText}>No likes yet</Text>
+                  <TouchableOpacity style={styles.exploreButton}>
+                    <Text style={styles.exploreButtonText}>Start Exploring</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </View>
+        )}
+      </ScrollView>
 
-          {/* Action Buttons */}
-          {isOwnProfile ? renderOwnProfileActions() : renderOtherUserActions()}
-        </ScrollView>
-      </LinearGradient>
+      {/* Follow List Modal */}
+      <Modal
+        visible={showFollowList !== null}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFollowList(null)}
+      >
+        {showFollowList && userData && (
+          <FollowList
+            userIds={showFollowList === 'followers' ? userData.followers || [] : userData.following || []}
+            onClose={() => setShowFollowList(null)}
+            title={showFollowList === 'followers' ? 'Followers' : 'Following'}
+            currentUserId={user?.uid || ''}
+            onFollowToggle={handleFollowToggle}
+            onRemoveFollower={handleRemoveFollower}
+          />
+        )}
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -305,162 +433,254 @@ export default function ProfileScreen({ userId }: { userId?: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#1a1a1a',
   },
-  gradient: {
+  scrollView: {
     flex: 1,
   },
   header: {
     padding: 20,
+    paddingTop: Platform.OS === 'android' ? 40 : 20,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  headerButton: {
-    padding: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
+  headerTitle: {
+    flex: 1,
   },
-  profileHeader: {
+  logoText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarContainer: {
-    marginBottom: 15,
-    position: 'relative',
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  avatarGradient: {
-    padding: 3,
+  profileImageContainer: {
+    marginRight: 20,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
     borderRadius: 50,
+    backgroundColor: '#FF4B6A',
   },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
-    borderColor: '#1a1a1a',
+  noPhotoContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  editAvatarButton: {
+  noPhotoText: {
+    fontSize: 40,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  editPhotoButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
     backgroundColor: '#FF4B6A',
-    padding: 8,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: '#1a1a1a',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerInfo: {
+    flex: 1,
   },
   name: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 5,
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  location: {
-    fontSize: 16,
-    color: '#ccc',
-    marginLeft: 5,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,75,106,0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  verifiedText: {
-    color: '#FF4B6A',
-    marginLeft: 5,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 20,
-    marginHorizontal: 20,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20,
-    marginBottom: 20,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
     marginBottom: 4,
   },
+  username: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  location: {
+    color: 'white',
+    marginLeft: 4,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 16,
+    marginTop: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
   statLabel: {
-    fontSize: 12,
-    color: '#ccc',
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    marginHorizontal: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    marginTop: 15,
+    gap: 10,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  highlightsContainer: {
+    padding: 20,
+  },
+  highlightsTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+  },
+  highlightsList: {
+    paddingRight: 20,
+  },
+  storyHighlight: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginRight: 10,
+    overflow: 'hidden',
+  },
+  storyImage: {
+    width: '100%',
+    height: '100%',
+  },
+  storyGradient: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 5,
+  },
+  storyText: {
+    color: 'white',
+    fontSize: 10,
+    textAlign: 'center',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 15,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#FF4B6A',
+  },
+  photosContainer: {
+    flex: 1,
+  },
+  photosGrid: {
+    marginHorizontal: -4,
+  },
+  photosContent: {
+    paddingHorizontal: 4,
+  },
+  photoContainer: {
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
+    margin: 4,
+  },
+  photo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+  },
+  content: {
+    padding: 20,
   },
   section: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 24,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: 'white',
-    marginBottom: 15,
+    marginBottom: 12,
   },
-  aboutText: {
+  bio: {
+    color: 'white',
     fontSize: 16,
-    color: '#ccc',
     lineHeight: 24,
-  },
-  showMoreButton: {
-    marginTop: 10,
-  },
-  showMoreText: {
-    color: '#FF4B6A',
-    fontSize: 14,
-    fontWeight: '600',
   },
   interestsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -5,
+    marginHorizontal: -4,
   },
   interestTag: {
-    backgroundColor: 'rgba(255,75,106,0.1)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    margin: 5,
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    margin: 4,
   },
   interestText: {
-    color: '#FF4B6A',
+    color: 'white',
     fontSize: 14,
   },
   infoContainer: {
-    gap: 15,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   infoText: {
-    marginLeft: 15,
+    marginLeft: 12,
+    flex: 1,
   },
-  infoLabel: {
+  infoTitle: {
     color: '#999',
     fontSize: 14,
   },
@@ -472,70 +692,54 @@ const styles = StyleSheet.create({
   personalityContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -5,
+    marginHorizontal: -4,
   },
   personalityTag: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    margin: 5,
+    backgroundColor: '#0095F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    margin: 4,
   },
   personalityText: {
     color: 'white',
     fontSize: 14,
   },
-  photosGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  photoContainer: {
-    width: PHOTO_SIZE,
-    height: PHOTO_SIZE,
-    marginBottom: 20,
-    borderRadius: 15,
-    overflow: 'hidden',
-  },
-  photo: {
-    width: '100%',
-    height: '100%',
-  },
-  photoOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-  },
-  actionButtons: {
-    flexDirection: 'row',
+  likesContainer: {
     padding: 20,
-    gap: 10,
   },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
+  likesList: {
+    minHeight: 200,
+  },
+  emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
+    padding: 40,
   },
-  editButton: {
-    backgroundColor: '#FF4B6A',
-  },
-  messageButton: {
-    backgroundColor: '#2d1f3f',
-  },
-  likeButton: {
-    backgroundColor: '#FF4B6A',
-  },
-  actionButtonText: {
-    color: 'white',
+  emptyStateText: {
+    color: '#666',
     fontSize: 16,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  addButton: {
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  addButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  exploreButton: {
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  exploreButtonText: {
+    color: 'white',
     fontWeight: '600',
   },
 });

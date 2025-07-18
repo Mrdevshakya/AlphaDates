@@ -1,170 +1,258 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  User,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  updateProfile
+} from 'firebase/auth';
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs
+} from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
+import { UserProfile, UserUpdateData } from '../../src/types';
 
-type User = {
-  id: string;
-  email: string;
-  name: string;
-  createdAt: string;
-};
-
-type AuthContextType = {
-  isAuthenticated: boolean;
-  currentUser: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (name: string, email: string, password: string) => Promise<boolean>;
+interface AuthContextType {
+  user: User | null;
+  userData: UserProfile | null;
+  setUserData: (userData: UserProfile | null) => void;
+  loading: boolean;
+  isFirstTime: boolean;
+  setIsFirstLaunch: (value: boolean) => Promise<void>;
+  signUp: (email: string, password: string, userData: Partial<UserProfile>) => Promise<User>;
+  signIn: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-};
+  updateUserProfile: (data: UserUpdateData) => Promise<void>;
+}
 
-const AuthContext = createContext<AuthContextType>({
-  isAuthenticated: false,
-  currentUser: null,
-  login: async () => false,
-  register: async () => false,
-  logout: async () => {},
-});
+const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
-// Storage keys
-const USERS_STORAGE_KEY = '@amity_users';
-const CURRENT_USER_KEY = '@amity_current_user';
-const AUTH_DATA_KEY = '@amity_auth_data';
+export const useAuth = () => useContext(AuthContext);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isFirstTime, setIsFirstTime] = useState(true);
+
+  // Fetch user data from Firestore
+  const fetchUserData = async (uid: string) => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        setUserData(userDoc.data() as UserProfile);
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    }
+  };
 
   useEffect(() => {
-    loadStoredAuthData();
+    // Check if it's first launch
+    AsyncStorage.getItem('hasLaunched')
+      .then(value => {
+        if (value === null) {
+          AsyncStorage.setItem('hasLaunched', 'false');
+          setIsFirstTime(true);
+        } else {
+          setIsFirstTime(false);
+        }
+      })
+      .catch(err => {
+        console.error('Error checking first launch:', err);
+        setIsFirstTime(false);
+      });
+
+    // Auth state listener
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      if (user) {
+        await fetchUserData(user.uid);
+      } else {
+        setUserData(null);
+      }
+      setLoading(false);
+    });
+
+    return unsubscribe;
   }, []);
 
-  const loadStoredAuthData = async () => {
+  const setIsFirstLaunch = async (value: boolean) => {
     try {
-      const [userJson, authDataJson] = await Promise.all([
-        AsyncStorage.getItem(CURRENT_USER_KEY),
-        AsyncStorage.getItem(AUTH_DATA_KEY),
-      ]);
-
-      if (userJson && authDataJson) {
-        const user = JSON.parse(userJson);
-        setCurrentUser(user);
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error('Error loading auth data:', error);
-    } finally {
-      setLoading(false);
+      await AsyncStorage.setItem('hasLaunched', String(!value));
+      setIsFirstTime(value);
+    } catch (err) {
+      console.error('Error setting first launch:', err);
     }
   };
 
-  const register = async (name: string, email: string, password: string) => {
-    try {
-      // Get existing users or initialize empty array
-      const usersJson = await AsyncStorage.getItem(USERS_STORAGE_KEY);
-      const users: User[] = usersJson ? JSON.parse(usersJson) : [];
-
-      // Check if email already exists
-      if (users.some(user => user.email === email)) {
-        throw new Error('Email already registered');
-      }
-
-      // Create new user
-      const newUser: User = {
-        id: Date.now().toString(),
-        email,
-        name,
-        createdAt: new Date().toISOString(),
-      };
-
-      // Add to users array
-      users.push(newUser);
-
-      // Store user data
-      await Promise.all([
-        AsyncStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users)),
-        AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser)),
-        AsyncStorage.setItem(AUTH_DATA_KEY, JSON.stringify({ email, password })),
-        AsyncStorage.setItem(`@amity_user_${newUser.id}`, JSON.stringify({
-          ...newUser,
-          password, // In a real app, this should be hashed
-        })),
-      ]);
-
-      setCurrentUser(newUser);
-      setIsAuthenticated(true);
-      return true;
-    } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
+  const validateInput = (username: string, password: string) => {
+    if (!username || !password) {
+      throw new Error('Please fill in all fields.');
+    }
+    if (password.length < 6) {
+      throw new Error('Password should be at least 6 characters long.');
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, userData: Partial<UserProfile>) => {
     try {
-      const usersJson = await AsyncStorage.getItem(USERS_STORAGE_KEY);
-      if (!usersJson) return false;
+      if (!userData.username) {
+        throw new Error('Username is required.');
+      }
 
-      const users: User[] = JSON.parse(usersJson);
-      const user = users.find(u => u.email === email);
+      // Check if username already exists
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('username', '==', userData.username));
+      const querySnapshot = await getDocs(q);
       
-      if (!user) {
-        throw new Error('User not found');
+      if (!querySnapshot.empty) {
+        throw new Error('Username already taken. Please choose another one.');
       }
 
-      // Get user's stored data
-      const userDataJson = await AsyncStorage.getItem(`@amity_user_${user.id}`);
-      if (!userDataJson) {
-        throw new Error('User data not found');
+      validateInput(email, password);
+      
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Reserve username
+      await setDoc(doc(db, 'usernames', userData.username), {
+        uid: user.uid,
+        createdAt: serverTimestamp()
+      });
+
+      // Save user data to Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        ...userData,
+        email,
+        displayName: userData.name,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: serverTimestamp(),
+      });
+
+      // Update display name if provided
+      if (userData.name) {
+        await updateProfile(user, {
+          displayName: userData.name
+        });
       }
 
-      const userData = JSON.parse(userDataJson);
-      if (userData.password !== password) {
-        throw new Error('Invalid password');
+      // Fetch updated user data
+      await fetchUserData(user.uid);
+
+      return user;
+    } catch (error: any) {
+      // If there's an error, clean up any created resources
+      if (error.code === 'auth/email-already-in-use') {
+        throw new Error('Email already in use. Please sign in or use a different email.');
+      }
+      console.error('Sign-up error:', error);
+      throw new Error(error.message);
+    }
+  };
+
+  const signIn = async (username: string, password: string) => {
+    try {
+      validateInput(username, password);
+      
+      // Find user by username
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('username', '==', username));
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        throw new Error('No account found with this username. Please sign up.');
       }
 
-      // Update stored auth data
-      await Promise.all([
-        AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user)),
-        AsyncStorage.setItem(AUTH_DATA_KEY, JSON.stringify({ email, password })),
-      ]);
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data() as UserProfile;
+      
+      // Sign in user with email and password
+      const userCredential = await signInWithEmailAndPassword(auth, userData.email, password);
+      const user = userCredential.user;
 
-      setCurrentUser(user);
-      setIsAuthenticated(true);
-      return true;
-    } catch (error) {
-      console.error('Login error:', error);
-      return false;
+      // Update last login time
+      await updateDoc(doc(db, 'users', user.uid), {
+        lastLoginAt: serverTimestamp()
+      });
+
+      // Fetch updated user data
+      await fetchUserData(user.uid);
+
+    } catch (error: any) {
+      console.error('Sign-in error:', error);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        throw new Error('Invalid username or password. Please try again.');
+      } else if (error.code === 'auth/too-many-requests') {
+        throw new Error('Too many failed attempts. Please try again later.');
+      } else {
+        throw new Error('Failed to sign in. Please try again.');
+      }
+    }
+  };
+
+  const updateUserProfile = async (data: UserUpdateData) => {
+    if (!user) throw new Error('No user logged in');
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        ...data,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update display name if it was changed
+      if (data.name) {
+        await updateProfile(user, {
+          displayName: data.name
+        });
+      }
+
+      // Fetch updated user data
+      await fetchUserData(user.uid);
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      throw new Error(error.message);
     }
   };
 
   const logout = async () => {
     try {
-      await Promise.all([
-        AsyncStorage.removeItem(CURRENT_USER_KEY),
-        AsyncStorage.removeItem(AUTH_DATA_KEY),
-      ]);
-      setCurrentUser(null);
-      setIsAuthenticated(false);
+      await signOut(auth);
+      setUserData(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      throw new Error('Failed to log out. Please try again.');
     }
   };
 
+  const contextValue = {
+    user,
+    userData,
+    setUserData,
+    loading,
+    isFirstTime,
+    setIsFirstLaunch,
+    signUp,
+    signIn,
+    logout,
+    updateUserProfile,
+  };
+
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        currentUser,
-        login,
-        register,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {!loading && children}
     </AuthContext.Provider>
   );
 }
-
-export const useAuth = () => useContext(AuthContext);
 
 export default AuthProvider;
