@@ -31,6 +31,26 @@ service cloud.firestore {
         );
     }
 
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (
+        resource.data.targetUserId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.targetUserId == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        resource.data.targetUserId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.targetUserId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+    }
+
     // Username reservations
     match /usernames/{username} {
       allow read: if true;  // Allow reading usernames without authentication

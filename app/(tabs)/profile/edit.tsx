@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,338 +7,151 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Platform,
-  ActivityIndicator,
   Image,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { LinearGradient } from 'expo-linear-gradient';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '../../config/firebase';
-import { UserProfile } from '../../../src/types';
 
 export default function EditProfileScreen() {
-  const { user, userData, updateUserProfile } = useAuth();
-  const [formData, setFormData] = useState<Partial<UserProfile>>({
-    name: userData?.name || '',
-    bio: userData?.bio || '',
-    location: userData?.location || '',
-    age: userData?.age || undefined,
-    interests: userData?.interests || [],
-    education: userData?.education || '',
-    work: userData?.work || '',
-    height: userData?.height || '',
-    zodiac: userData?.zodiac || '',
-    drinking: userData?.drinking || '',
-    smoking: userData?.smoking || '',
-    lookingFor: userData?.lookingFor || '',
-    children: userData?.children || '',
-    pets: userData?.pets || '',
-    personality: userData?.personality || [],
-    languages: userData?.languages || [],
-    photos: userData?.photos || [],
-  });
-
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (userData) {
-      setFormData({
-        ...userData,
-        interests: userData.interests || [],
-        personality: userData.personality || [],
-        languages: userData.languages || [],
-        photos: userData.photos || [],
-      });
-    }
-  }, [userData]);
-
-  if (!user) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Please log in to edit your profile</Text>
-      </View>
-    );
-  }
-
-  const handleInputChange = (field: keyof UserProfile, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleArrayInput = (field: keyof UserProfile, value: string) => {
-    const array = value.split(',').map(item => item.trim()).filter(item => item !== '');
-    setFormData(prev => ({
-      ...prev,
-      [field]: array
-    }));
-  };
-
-  const handleImagePick = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 1,
-      });
-
-      if (!result.canceled) {
-        const uri = result.assets[0].uri;
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        
-        const storageRef = ref(storage, `users/${user.uid}/photos/${Date.now()}`);
-        await uploadBytes(storageRef, blob);
-        const downloadURL = await getDownloadURL(storageRef);
-        
-        const newPhotos = [...(formData.photos || []), downloadURL];
-        handleInputChange('photos', newPhotos);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to upload image. Please try again.');
-    }
-  };
+  const { userData, setUserData } = useAuth();
+  const [name, setName] = useState(userData?.name || '');
+  const [username, setUsername] = useState(userData?.username || '');
+  const [bio, setBio] = useState(userData?.bio || '');
+  const [location, setLocation] = useState(userData?.location || '');
+  const [age, setAge] = useState(userData?.age?.toString() || '');
+  const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
+    if (!userData) return;
+    
+    setLoading(true);
     try {
-      setIsLoading(true);
-      await updateUserProfile(formData);
+      const userRef = doc(db, 'users', userData.id);
+      const updates = {
+        name,
+        username,
+        bio,
+        location,
+        age: age ? parseInt(age) : undefined,
+        updatedAt: new Date(),
+      };
+
+      await updateDoc(userRef, updates);
+      setUserData({ ...userData, ...updates });
       Alert.alert('Success', 'Profile updated successfully');
       router.back();
     } catch (error) {
       console.error('Error updating profile:', error);
       Alert.alert('Error', 'Failed to update profile. Please try again.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0].uri) {
+        // Handle image upload to storage and update profile picture URL
+        // This is a placeholder - you'll need to implement actual image upload
+        Alert.alert('Coming Soon', 'Image upload will be implemented soon!');
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.avatarSection}>
-        <TouchableOpacity onPress={handleImagePick} style={styles.avatar}>
-          {formData.photos && formData.photos.length > 0 ? (
-            <Image source={{ uri: formData.photos[0] }} style={styles.avatarImage} />
-          ) : (
-            <Text style={styles.avatarText}>{formData.name?.[0]}</Text>
-          )}
-          <View style={styles.cameraIcon}>
-            <Ionicons name="camera" size={20} color="white" />
-          </View>
+      <View style={styles.imageContainer}>
+        <Image
+          source={{
+            uri: userData?.profilePicture ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+          }}
+          style={styles.profileImage}
+        />
+        <TouchableOpacity style={styles.changePhotoButton} onPress={handlePickImage}>
+          <Text style={styles.changePhotoText}>Change Photo</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.form}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Basic Information</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.name}
-              onChangeText={(value) => handleInputChange('name', value)}
-              placeholder="Your name"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Bio</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.bio}
-              onChangeText={(value) => handleInputChange('bio', value)}
-              placeholder="Write something about yourself"
-              placeholderTextColor="#666"
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.location}
-              onChangeText={(value) => handleInputChange('location', value)}
-              placeholder="Your location"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Age</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.age?.toString()}
-              onChangeText={(value) => handleInputChange('age', parseInt(value) || undefined)}
-              placeholder="Your age"
-              placeholderTextColor="#666"
-              keyboardType="numeric"
-            />
-          </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Your name"
+            placeholderTextColor="#666"
+          />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Information</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Education</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.education}
-              onChangeText={(value) => handleInputChange('education', value)}
-              placeholder="Your education"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Work</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.work}
-              onChangeText={(value) => handleInputChange('work', value)}
-              placeholder="Your work"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Height</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.height}
-              onChangeText={(value) => handleInputChange('height', value)}
-              placeholder="Your height"
-              placeholderTextColor="#666"
-            />
-          </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Username</Text>
+          <TextInput
+            style={styles.input}
+            value={username}
+            onChangeText={setUsername}
+            placeholder="Your username"
+            placeholderTextColor="#666"
+          />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences & Lifestyle</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Interests (comma separated)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.interests?.join(', ')}
-              onChangeText={(value) => handleArrayInput('interests', value)}
-              placeholder="Travel, Music, Sports..."
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Languages (comma separated)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.languages?.join(', ')}
-              onChangeText={(value) => handleArrayInput('languages', value)}
-              placeholder="English, Spanish..."
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Personality Traits (comma separated)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.personality?.join(', ')}
-              onChangeText={(value) => handleArrayInput('personality', value)}
-              placeholder="Outgoing, Creative..."
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Zodiac Sign</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.zodiac}
-              onChangeText={(value) => handleInputChange('zodiac', value)}
-              placeholder="Your zodiac sign"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Drinking</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.drinking}
-              onChangeText={(value) => handleInputChange('drinking', value)}
-              placeholder="Your drinking habits"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Smoking</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.smoking}
-              onChangeText={(value) => handleInputChange('smoking', value)}
-              placeholder="Your smoking habits"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Looking For</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.lookingFor}
-              onChangeText={(value) => handleInputChange('lookingFor', value)}
-              placeholder="What are you looking for?"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Children</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.children}
-              onChangeText={(value) => handleInputChange('children', value)}
-              placeholder="Your status regarding children"
-              placeholderTextColor="#666"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Pets</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.pets}
-              onChangeText={(value) => handleInputChange('pets', value)}
-              placeholder="Your status regarding pets"
-              placeholderTextColor="#666"
-            />
-          </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Bio</Text>
+          <TextInput
+            style={[styles.input, styles.bioInput]}
+            value={bio}
+            onChangeText={setBio}
+            placeholder="Tell us about yourself"
+            placeholderTextColor="#666"
+            multiline
+          />
         </View>
 
-        <TouchableOpacity 
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Location</Text>
+          <TextInput
+            style={styles.input}
+            value={location}
+            onChangeText={setLocation}
+            placeholder="Your location"
+            placeholderTextColor="#666"
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Age</Text>
+          <TextInput
+            style={styles.input}
+            value={age}
+            onChangeText={setAge}
+            placeholder="Your age"
+            placeholderTextColor="#666"
+            keyboardType="numeric"
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.saveButton, loading && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={isLoading}
-          style={styles.saveButtonContainer}
+          disabled={loading}
         >
-          <LinearGradient
-            colors={['#FF4B6A', '#FF8C9F']}
-            style={styles.saveButton}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            )}
-          </LinearGradient>
+          <Text style={styles.saveButtonText}>
+            {loading ? 'Saving...' : 'Save Changes'}
+          </Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -350,87 +163,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a1a',
   },
-  avatarSection: {
+  imageContainer: {
     alignItems: 'center',
-    paddingVertical: 32,
+    marginTop: 20,
+    marginBottom: 30,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#FF4B6A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-    overflow: 'hidden',
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 10,
   },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarText: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  cameraIcon: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#FF4B6A',
+  changePhotoButton: {
     padding: 8,
-    borderRadius: 15,
+  },
+  changePhotoText: {
+    color: '#0095F6',
+    fontSize: 16,
   },
   form: {
-    padding: 20,
+    paddingHorizontal: 20,
   },
-  section: {
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 16,
-  },
-  inputGroup: {
-    marginBottom: 16,
+  inputContainer: {
+    marginBottom: 20,
   },
   label: {
+    color: '#fff',
     fontSize: 16,
-    color: 'white',
-    fontWeight: '600',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    padding: 16,
-    color: 'white',
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
     fontSize: 16,
   },
-  textArea: {
-    height: 120,
+  bioInput: {
+    height: 100,
     textAlignVertical: 'top',
   },
-  saveButtonContainer: {
-    marginTop: 32,
-    marginBottom: 48,
-  },
   saveButton: {
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: '#0095F6',
+    borderRadius: 8,
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: 'bold',
   },
-  errorText: {
-    color: 'white',
-    fontSize: 16,
-    textAlign: 'center',
-    padding: 20,
-  },
-});
+}); 

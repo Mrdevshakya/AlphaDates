@@ -17,6 +17,7 @@ import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
+import { createNotification, deleteNotificationsByContent } from '../utils/notifications';
 
 const { width } = Dimensions.get('window');
 const DOUBLE_TAP_DELAY = 300;
@@ -64,13 +65,59 @@ export default function Post({ post, user, onLike, onComment }: PostProps) {
     ]).start(() => setShowLikeAnimation(false));
   };
 
-  const handleLike = () => {
+  const handleLike = async () => {
     onLike(post.id);
+    
+    // If the post is already liked, delete the notification
+    if (currentUser && post.likes.includes(currentUser.uid)) {
+      try {
+        await deleteNotificationsByContent(
+          'like',
+          currentUser.uid,
+          user.id,
+          post.id
+        );
+      } catch (error) {
+        console.error('Error deleting like notification:', error);
+      }
+    } else {
+      // Create notification for post like
+      if (currentUser && user.id !== currentUser.uid) {
+        try {
+          await createNotification(
+            'like',
+            currentUser.uid,
+            user.id,
+            post.id,
+            'post'
+          );
+        } catch (error) {
+          console.error('Error creating notification:', error);
+        }
+      }
+    }
   };
 
-  const handleComment = () => {
+  const handleComment = async () => {
     if (comment.trim()) {
       onComment(post.id, comment.trim());
+      
+      // Create notification for comment
+      if (currentUser && user.id !== currentUser.uid) {
+        try {
+          await createNotification(
+            'comment',
+            currentUser.uid,
+            user.id,
+            post.id,
+            'post',
+            comment.trim()
+          );
+        } catch (error) {
+          console.error('Error creating notification:', error);
+        }
+      }
+      
       setComment('');
     }
   };
@@ -248,13 +295,16 @@ export default function Post({ post, user, onLike, onComment }: PostProps) {
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={comment}
           onChangeText={setComment}
-          onSubmitEditing={handleComment}
         />
-        {comment.length > 0 && (
-          <TouchableOpacity onPress={handleComment}>
-            <Text style={styles.postButton}>Post</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity 
+          style={[styles.postButton, !comment.trim() && styles.postButtonDisabled]} 
+          onPress={handleComment}
+          disabled={!comment.trim()}
+        >
+          <Text style={[styles.postButtonText, !comment.trim() && styles.postButtonTextDisabled]}>
+            Post
+          </Text>
+        </TouchableOpacity>
       </View>
     </BlurView>
   );
@@ -415,5 +465,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
     marginLeft: 8,
+  },
+  postButtonDisabled: {
+    opacity: 0.5,
+  },
+  postButtonText: {
+    color: '#FF4B6A',
+  },
+  postButtonTextDisabled: {
+    color: 'rgba(255,255,255,0.5)',
   },
 }); 

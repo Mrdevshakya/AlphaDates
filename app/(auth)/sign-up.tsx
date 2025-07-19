@@ -23,6 +23,7 @@ const { width, height } = Dimensions.get('window');
 
 export default function SignUpScreen() {
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -33,7 +34,7 @@ export default function SignUpScreen() {
   const { signUp } = useAuth();
 
   const handleSignUp = async () => {
-    if (!name || !email || !password || !confirmPassword || !mobileNumber) {
+    if (!name || !username || !email || !password || !confirmPassword || !mobileNumber) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -50,10 +51,18 @@ export default function SignUpScreen() {
       return;
     }
 
+    // Username validation
+    const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+    if (!usernameRegex.test(username)) {
+      Alert.alert('Error', 'Username must be 3-20 characters long and can only contain letters, numbers, and underscores');
+      return;
+    }
+
     try {
       setIsLoading(true);
       await signUp(email, password, {
         name,
+        username,
         mobileNumber,
       });
       router.replace('/(tabs)/home');
@@ -106,6 +115,26 @@ export default function SignUpScreen() {
                   editable={!isLoading}
                 />
               </View>
+            </View>
+
+            {/* Username Input */}
+            <View style={styles.inputWrapper}>
+              <Text style={styles.inputLabel}>Username</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons name="at-outline" size={20} color="#FF4B6A" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Choose a unique username"
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  value={username}
+                  onChangeText={(text) => setUsername(text.toLowerCase())}
+                  autoCapitalize="none"
+                  editable={!isLoading}
+                />
+              </View>
+              {username.length > 0 && !username.match(/^[a-zA-Z0-9_]{3,20}$/) && (
+                <Text style={styles.errorText}>Username must be 3-20 characters and can only contain letters, numbers, and underscores</Text>
+              )}
             </View>
 
             {/* Email Input */}

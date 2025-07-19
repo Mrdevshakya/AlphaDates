@@ -18,6 +18,7 @@ export default function ProfileLayout() {
           headerTintColor: '#fff',
         }} 
       />
+      <Stack.Screen name="settings" />
     </Stack>
   );
 }

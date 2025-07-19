@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   ScrollView,
   Platform,
   Alert,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -17,10 +19,44 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 
 export default function AccountSettings() {
-  const { userData } = useAuth();
+  const { userData, logout } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleBack = () => {
     router.back();
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              await logout();
+              router.replace('/(auth)/sign-in');
+            } catch (error) {
+              Alert.alert(
+                'Error',
+                'Failed to logout. Please try again.',
+                [{ text: 'OK' }]
+              );
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const renderSettingItem = (
@@ -43,6 +79,20 @@ export default function AccountSettings() {
 
   return (
     <View style={styles.container}>
+      {/* Loading Modal */}
+      <Modal
+        transparent
+        visible={isLoading}
+        animationType="fade"
+      >
+        <View style={styles.loadingModal}>
+          <View style={styles.loadingContent}>
+            <ActivityIndicator size="large" color="#FF4B6A" />
+            <Text style={styles.loadingText}>Logging out...</Text>
+          </View>
+        </View>
+      </Modal>
+
       {/* Header */}
       <LinearGradient
         colors={['#FF4B6A', '#FF8C9F']}
@@ -113,6 +163,12 @@ export default function AccountSettings() {
         <BlurView intensity={10} tint="dark" style={[styles.section, styles.dangerSection]}>
           <Text style={[styles.sectionTitle, styles.dangerText]}>Danger Zone</Text>
           {renderSettingItem(
+            'log-out-outline',
+            'Logout',
+            'Sign out of your account',
+            handleLogout
+          )}
+          {renderSettingItem(
             'trash-outline',
             'Delete Account',
             'This action cannot be undone',
@@ -138,6 +194,9 @@ export default function AccountSettings() {
             }
           )}
         </BlurView>
+
+        {/* Add some bottom padding for better scrolling */}
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -223,5 +282,22 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#FF3B30',
+  },
+  loadingModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#FFF',
+    marginTop: 10,
+    fontSize: 16,
   },
 }); 

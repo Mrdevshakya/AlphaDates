@@ -17,14 +17,20 @@ import {
   collection,
   query,
   where,
-  getDocs
+  getDocs,
+  onSnapshot
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { UserProfile, UserUpdateData } from '../../src/types';
+import { getUnreadMessagesCount } from '../utils/chat';
+import { getUnreadNotificationsCount, subscribeToNotifications, NotificationWithUser } from '../utils/notifications';
 
 interface AuthContextType {
   user: User | null;
   userData: UserProfile | null;
+  unreadMessagesCount: number;
+  unreadNotificationsCount: number;
+  notifications: NotificationWithUser[];
   setUserData: (userData: UserProfile | null) => void;
   loading: boolean;
   isFirstTime: boolean;
@@ -33,6 +39,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (data: UserUpdateData) => Promise<void>;
+  refreshUnreadCount: () => Promise<void>;
+  refreshNotifications: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -44,6 +52,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userData, setUserData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirstTime, setIsFirstTime] = useState(true);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [notifications, setNotifications] = useState<NotificationWithUser[]>([]);
 
   // Fetch user data from Firestore
   const fetchUserData = async (uid: string) => {
@@ -54,6 +65,28 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
+    }
+  };
+
+  // Fetch unread messages count
+  const refreshUnreadCount = async () => {
+    if (!user) return;
+    try {
+      const count = await getUnreadMessagesCount(user.uid);
+      setUnreadMessagesCount(count);
+    } catch (error) {
+      console.error('Error fetching unread messages count:', error);
+    }
+  };
+
+  // Fetch unread notifications count
+  const refreshNotifications = async () => {
+    if (!user) return;
+    try {
+      const count = await getUnreadNotificationsCount(user.uid);
+      setUnreadNotificationsCount(count);
+    } catch (error) {
+      console.error('Error fetching unread notifications count:', error);
     }
   };
 
@@ -78,14 +111,54 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(user);
       if (user) {
         await fetchUserData(user.uid);
+        await refreshUnreadCount();
+        await refreshNotifications();
       } else {
         setUserData(null);
+        setUnreadMessagesCount(0);
+        setUnreadNotificationsCount(0);
+        setNotifications([]);
       }
       setLoading(false);
     });
 
     return unsubscribe;
   }, []);
+
+  // Set up chat rooms listener to update unread count
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen for changes in chat rooms where user is a participant
+    const chatRoomsRef = collection(db, 'chatRooms');
+    const q = query(
+      chatRoomsRef,
+      where('participants', 'array-contains', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, async () => {
+      // When chat rooms update, refresh the unread count
+      await refreshUnreadCount();
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Set up notifications listener
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to notifications
+    const unsubscribe = subscribeToNotifications(user.uid, (updatedNotifications) => {
+      setNotifications(updatedNotifications);
+      
+      // Update unread count
+      const unreadCount = updatedNotifications.filter(item => !item.notification.read).length;
+      setUnreadNotificationsCount(unreadCount);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const setIsFirstLaunch = async (value: boolean) => {
     try {
@@ -188,6 +261,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Fetch updated user data
       await fetchUserData(user.uid);
+      await refreshUnreadCount();
+      await refreshNotifications();
 
     } catch (error: any) {
       console.error('Sign-in error:', error);
@@ -211,46 +286,56 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         updatedAt: serverTimestamp()
       });
 
-      // Update display name if it was changed
+      // Update local state
+      if (userData) {
+        setUserData({
+          ...userData,
+          ...data
+        });
+      }
+
+      // Update display name if provided
       if (data.name) {
         await updateProfile(user, {
           displayName: data.name
         });
       }
-
-      // Fetch updated user data
-      await fetchUserData(user.uid);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating profile:', error);
-      throw new Error(error.message);
+      throw new Error('Failed to update profile. Please try again.');
     }
   };
 
   const logout = async () => {
     try {
       await signOut(auth);
+      setUser(null);
       setUserData(null);
     } catch (error) {
-      throw new Error('Failed to log out. Please try again.');
+      console.error('Error signing out:', error);
+      throw new Error('Failed to sign out. Please try again.');
     }
   };
 
-  const contextValue = {
-    user,
-    userData,
-    setUserData,
-    loading,
-    isFirstTime,
-    setIsFirstLaunch,
-    signUp,
-    signIn,
-    logout,
-    updateUserProfile,
-  };
-
   return (
-    <AuthContext.Provider value={contextValue}>
-      {!loading && children}
+    <AuthContext.Provider value={{
+      user,
+      userData,
+      unreadMessagesCount,
+      unreadNotificationsCount,
+      notifications,
+      setUserData,
+      loading,
+      isFirstTime,
+      setIsFirstLaunch,
+      signUp,
+      signIn,
+      logout,
+      updateUserProfile,
+      refreshUnreadCount,
+      refreshNotifications
+    }}>
+      {children}
     </AuthContext.Provider>
   );
 }

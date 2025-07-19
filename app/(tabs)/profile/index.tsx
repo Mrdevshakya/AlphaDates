@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,22 +17,46 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import FollowList from '../../components/FollowList';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove, getDoc, Firestore } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { UserProfile } from '../../../src/types';
+import { createOrGetChatRoom } from '../../utils/chat';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 40) / 3;
 
 export default function ProfileScreen() {
+  const { userId } = useLocalSearchParams();
   const { user, userData, setUserData, logout } = useAuth();
+  const [profileData, setProfileData] = useState<UserProfile | null>(null);
+  const isOwnProfile = !userId || userId === user?.uid;
+  
+  useEffect(() => {
+    if (!user) return;
+    
+    const loadProfile = async () => {
+      if (!isOwnProfile && userId) {
+        // Load other user's profile
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+          setProfileData({ id: userDoc.id, ...userDoc.data() } as UserProfile);
+        }
+      }
+    };
+    
+    loadProfile();
+  }, [user, userId]);
+
+  const displayData = isOwnProfile ? userData : profileData;
+
   const [activeTab, setActiveTab] = useState<'photos' | 'about' | 'likes'>('photos');
   const [refreshing, setRefreshing] = useState(false);
   const [showFollowList, setShowFollowList] = useState<'followers' | 'following' | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -44,11 +68,11 @@ export default function ProfileScreen() {
   };
 
   const handleEditProfile = () => {
-    router.push('/profile/edit');
+    router.push('edit');
   };
 
   const handleSettings = () => {
-    router.push('/profile/settings');
+    router.push('/profile/settings/account');
   };
 
   const handleRefresh = async () => {
@@ -58,38 +82,68 @@ export default function ProfileScreen() {
   };
 
   const handleFollowToggle = async (targetUserId: string, isFollowing: boolean) => {
-    if (!user || !userData) return;
+    if (!user || !userData) {
+      Alert.alert('Error', 'Please sign in to follow users');
+      return;
+    }
+
+    if (isLoading) return;
 
     try {
-      // Update target user's followers list first
-      await updateDoc(doc(db, 'users', targetUserId), {
+      setIsLoading(true);
+
+      // Get references to both user documents
+      const targetUserRef = doc(db as Firestore, 'users', targetUserId);
+      const targetUserDoc = await getDoc(targetUserRef);
+      
+      if (!targetUserDoc.exists()) {
+        Alert.alert('Error', 'User not found');
+        setIsLoading(false);
+        return;
+      }
+
+      // Update target user's followers list
+      await updateDoc(targetUserRef, {
         followers: isFollowing
           ? arrayRemove(user.uid)
           : arrayUnion(user.uid)
       });
 
-      // Then update current user's following list
-      await updateDoc(doc(db, 'users', user.uid), {
+      // Update current user's following list
+      const currentUserRef = doc(db as Firestore, 'users', user.uid);
+      await updateDoc(currentUserRef, {
         following: isFollowing 
           ? arrayRemove(targetUserId)
           : arrayUnion(targetUserId)
       });
 
-      // Update local state after successful Firebase update
+      // Update local state
       const updatedUserData = {
         ...userData,
         following: isFollowing
-          ? userData.following.filter(id => id !== targetUserId)
-          : [...userData.following, targetUserId]
+          ? (userData.following || []).filter(id => id !== targetUserId)
+          : [...(userData.following || []), targetUserId]
       };
       setUserData(updatedUserData);
+
+      // Update profile data if we're viewing another user's profile
+      if (!isOwnProfile && profileData) {
+        setProfileData({
+          ...profileData,
+          followers: isFollowing
+            ? (profileData.followers || []).filter(id => id !== user.uid)
+            : [...(profileData.followers || []), user.uid]
+        });
+      }
+
     } catch (error) {
       console.error('Error toggling follow:', error);
       Alert.alert(
         'Error',
-        'Failed to update follow status. Please try again.',
-        [{ text: 'OK' }]
+        'Failed to update follow status. Please try again.'
       );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -119,6 +173,27 @@ export default function ProfileScreen() {
         'Error',
         'Failed to remove follower. Please try again.',
         [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleMessage = async () => {
+    if (!user || !userId || typeof userId !== 'string') {
+      Alert.alert('Error', 'Cannot start chat at this time');
+      return;
+    }
+
+    try {
+      const chatRoomId = await createOrGetChatRoom(user.uid, userId);
+      router.push({
+        pathname: '/chat/[id]',
+        params: { id: chatRoomId }
+      });
+    } catch (error) {
+      console.error('Error starting chat:', error);
+      Alert.alert(
+        'Error',
+        'Failed to start chat. Please try again.'
       );
     }
   };
@@ -155,7 +230,7 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
 
-  if (!userData) return null;
+  if (!displayData) return null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -180,34 +255,39 @@ export default function ProfileScreen() {
             <View style={styles.headerTitle}>
               <Text style={styles.logoText}>Profile</Text>
             </View>
-            <TouchableOpacity style={styles.settingsButton} onPress={handleSettings}>
-              <Ionicons name="settings-outline" size={24} color="white" />
-            </TouchableOpacity>
+            {isOwnProfile ? (
+              <TouchableOpacity style={styles.settingsButton} onPress={handleSettings}>
+                <Ionicons name="settings-outline" size={24} color="white" />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <View style={styles.headerContent}>
             <View style={styles.profileImageContainer}>
               <Image
                 source={{ 
-                  uri: userData.profilePicture || 
-                    `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=random` 
+                  uri: displayData.profilePicture || 
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayData.name)}&background=random` 
                 }}
                 style={styles.profileImage}
               />
-              <TouchableOpacity style={styles.editPhotoButton} onPress={handleEditProfile}>
-                <Ionicons name="camera" size={20} color="white" />
-              </TouchableOpacity>
+              {isOwnProfile && (
+                <TouchableOpacity style={styles.editPhotoButton} onPress={handleEditProfile}>
+                  <Ionicons name="camera" size={20} color="white" />
+                </TouchableOpacity>
+              )}
             </View>
+
             <View style={styles.headerInfo}>
               <Text style={styles.name}>
-                {userData.name}
-                {userData.age ? `, ${userData.age}` : ''}
+                {displayData.name}
+                {displayData.age ? `, ${displayData.age}` : ''}
               </Text>
-              <Text style={styles.username}>@{userData.username}</Text>
-              {userData.location && (
+              <Text style={styles.username}>@{displayData.username}</Text>
+              {displayData.location && (
                 <View style={styles.locationContainer}>
                   <Ionicons name="location" size={16} color="white" />
-                  <Text style={styles.location}>{userData.location}</Text>
+                  <Text style={styles.location}>{displayData.location}</Text>
                 </View>
               )}
             </View>
@@ -216,7 +296,7 @@ export default function ProfileScreen() {
           {/* Profile Stats */}
           <View style={styles.statsContainer}>
             <TouchableOpacity style={styles.statItem}>
-              <Text style={styles.statNumber}>{userData.posts?.length || 0}</Text>
+              <Text style={styles.statNumber}>{displayData.posts?.length || 0}</Text>
               <Text style={styles.statLabel}>Posts</Text>
             </TouchableOpacity>
             <LinearGradient
@@ -229,7 +309,7 @@ export default function ProfileScreen() {
               style={styles.statItem}
               onPress={() => setShowFollowList('followers')}
             >
-              <Text style={styles.statNumber}>{userData.followers?.length || 0}</Text>
+              <Text style={styles.statNumber}>{displayData.followers?.length || 0}</Text>
               <Text style={styles.statLabel}>Followers</Text>
             </TouchableOpacity>
             <LinearGradient
@@ -242,28 +322,57 @@ export default function ProfileScreen() {
               style={styles.statItem}
               onPress={() => setShowFollowList('following')}
             >
-              <Text style={styles.statNumber}>{userData.following?.length || 0}</Text>
+              <Text style={styles.statNumber}>{displayData.following?.length || 0}</Text>
               <Text style={styles.statLabel}>Following</Text>
             </TouchableOpacity>
           </View>
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleEditProfile}>
-              <Text style={styles.actionButtonText}>Edit Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>Share Profile</Text>
-            </TouchableOpacity>
+            {isOwnProfile ? (
+              <>
+                <TouchableOpacity style={styles.actionButton} onPress={handleEditProfile}>
+                  <Text style={styles.actionButtonText}>Edit Profile</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionButton}>
+                  <Text style={styles.actionButtonText}>Share Profile</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity style={styles.actionButton} onPress={handleMessage}>
+                  <Text style={styles.actionButtonText}>Message</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[
+                    styles.actionButton,
+                    isLoading && styles.disabledButton
+                  ]} 
+                  onPress={() => {
+                    if (!isLoading && typeof userId === 'string') {
+                      handleFollowToggle(
+                        userId, 
+                        userData?.following?.includes(userId) || false
+                      );
+                    }
+                  }}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.actionButtonText}>
+                    {isLoading ? 'Loading...' : (userData?.following?.includes(typeof userId === 'string' ? userId : '') ? 'Unfollow' : 'Follow')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </LinearGradient>
 
         {/* Story Highlights */}
-        {userData.photos && userData.photos.length > 0 && (
+        {displayData.photos && displayData.photos.length > 0 && (
           <View style={styles.highlightsContainer}>
             <Text style={styles.highlightsTitle}>Story Highlights</Text>
             <FlatList
-              data={userData.photos}
+              data={displayData.photos}
               renderItem={renderStoryHighlight}
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -309,9 +418,9 @@ export default function ProfileScreen() {
         {/* Tab Content */}
         {activeTab === 'photos' && (
           <View style={styles.photosContainer}>
-            {userData.photos && userData.photos.length > 0 ? (
+            {displayData.photos && displayData.photos.length > 0 ? (
               <FlatList
-                data={userData.photos}
+                data={displayData.photos}
                 renderItem={renderPhoto}
                 numColumns={3}
                 scrollEnabled={false}
@@ -332,18 +441,18 @@ export default function ProfileScreen() {
 
         {activeTab === 'about' && (
           <View style={styles.content}>
-            {userData.bio && (
+            {displayData.bio && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>About Me</Text>
-                <Text style={styles.bio}>{userData.bio}</Text>
+                <Text style={styles.bio}>{displayData.bio}</Text>
               </View>
             )}
 
-            {userData.interests && userData.interests.length > 0 && (
+            {displayData.interests && displayData.interests.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Interests</Text>
                 <View style={styles.interestsContainer}>
-                  {userData.interests.map((interest, index) => (
+                  {displayData.interests.map((interest, index) => (
                     <View key={index} style={styles.interestTag}>
                       <Text style={styles.interestText}>{interest}</Text>
                     </View>
@@ -355,30 +464,30 @@ export default function ProfileScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Basic Info</Text>
               <BlurView intensity={10} tint="light" style={styles.infoContainer}>
-                {renderInfoItem('school', 'Education', userData.education)}
-                {renderInfoItem('briefcase', 'Work', userData.work)}
-                {userData.languages && renderInfoItem('language', 'Languages', userData.languages.join(', '))}
-                {renderInfoItem('body', 'Height', userData.height)}
-                {renderInfoItem('star', 'Zodiac', userData.zodiac)}
+                {renderInfoItem('school', 'Education', displayData.education)}
+                {renderInfoItem('briefcase', 'Work', displayData.work)}
+                {displayData.languages && renderInfoItem('language', 'Languages', displayData.languages.join(', '))}
+                {renderInfoItem('body', 'Height', displayData.height)}
+                {renderInfoItem('star', 'Zodiac', displayData.zodiac)}
               </BlurView>
             </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Lifestyle</Text>
               <BlurView intensity={10} tint="light" style={styles.infoContainer}>
-                {renderInfoItem('wine', 'Drinking', userData.drinking)}
-                {renderInfoItem('leaf', 'Smoking', userData.smoking)}
-                {renderInfoItem('heart', 'Looking For', userData.lookingFor)}
-                {renderInfoItem('people', 'Children', userData.children)}
-                {renderInfoItem('paw', 'Pets', userData.pets)}
+                {renderInfoItem('wine', 'Drinking', displayData.drinking)}
+                {renderInfoItem('leaf', 'Smoking', displayData.smoking)}
+                {renderInfoItem('heart', 'Looking For', displayData.lookingFor)}
+                {renderInfoItem('people', 'Children', displayData.children)}
+                {renderInfoItem('paw', 'Pets', displayData.pets)}
               </BlurView>
             </View>
 
-            {userData.personality && userData.personality.length > 0 && (
+            {displayData.personality && displayData.personality.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Personality</Text>
                 <View style={styles.personalityContainer}>
-                  {userData.personality.map((trait, index) => (
+                  {displayData.personality.map((trait, index) => (
                     <View key={index} style={styles.personalityTag}>
                       <Text style={styles.personalityText}>{trait}</Text>
                     </View>
@@ -415,9 +524,9 @@ export default function ProfileScreen() {
         transparent={true}
         onRequestClose={() => setShowFollowList(null)}
       >
-        {showFollowList && userData && (
+        {showFollowList && displayData && (
           <FollowList
-            userIds={showFollowList === 'followers' ? userData.followers || [] : userData.following || []}
+            userIds={showFollowList === 'followers' ? displayData.followers || [] : displayData.following || []}
             onClose={() => setShowFollowList(null)}
             title={showFollowList === 'followers' ? 'Followers' : 'Following'}
             currentUserId={user?.uid || ''}
@@ -741,5 +850,8 @@ const styles = StyleSheet.create({
   exploreButtonText: {
     color: 'white',
     fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
 });

@@ -1,397 +1,527 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
   Dimensions,
   Animated,
+  PanResponder,
   Platform,
   RefreshControl,
   ImageBackground,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Feather, AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { BlurView } from 'expo-blur';
+import { SvgUri } from 'react-native-svg';
+import { createOrGetChatRoom } from '../utils/chat';
+import { useAuth } from '../context/AuthContext';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  doc, 
+  getDoc,
+  addDoc,
+  updateDoc,
+  arrayUnion,
+  Timestamp,
+  serverTimestamp
+} from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { UserProfile } from '../../src/types';
+import { createNotification } from '../utils/notifications';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 30;
-const CARD_HEIGHT = height * 0.25;
+const CARD_HEIGHT = height * 0.6;
+const SWIPE_THRESHOLD = 120;
 
-// Mock data
-const MATCHES = [
-  {
-    id: '1',
-    name: 'Sarah',
-    age: 24,
-    image: 'https://picsum.photos/800/400?random=1',
-    lastActive: 'Online',
-    matchTime: '2h ago',
-    compatibility: '95%',
-    newMatch: true,
-    mutualFriends: 3,
-    interests: ['Travel', 'Music', 'Photography'],
-    distance: '2 km away',
-    bio: 'Adventure seeker & coffee lover ☕️',
-    lastMessage: 'Hey, how are you?',
-  },
-  {
-    id: '2',
-    name: 'Emma',
-    age: 26,
-    image: 'https://picsum.photos/800/400?random=2',
-    lastActive: '1h ago',
-    matchTime: '5h ago',
-    compatibility: '88%',
-    newMatch: true,
-    mutualFriends: 5,
-    interests: ['Art', 'Food', 'Movies'],
-    distance: '5 km away',
-    bio: 'Art curator with a passion for life 🎨',
-    lastMessage: null,
-  },
-  {
-    id: '3',
-    name: 'Jessica',
-    age: 25,
-    image: 'https://picsum.photos/800/400?random=3',
-    lastActive: '30m ago',
-    matchTime: '1d ago',
-    compatibility: '92%',
-    newMatch: false,
-    mutualFriends: 2,
-    interests: ['Sports', 'Books', 'Travel'],
-    distance: '3 km away',
-    bio: 'Bookworm and fitness enthusiast 📚💪',
-    lastMessage: 'Would you like to meet for coffee?',
-  },
-];
-
-const CategoryBadge = ({ label, count }: { label: string; count: number }) => (
-  <View style={styles.categoryBadge}>
-    <Text style={styles.categoryLabel}>{label}</Text>
-    <View style={styles.categoryCount}>
-      <Text style={styles.categoryCountText}>{count}</Text>
-    </View>
-  </View>
-);
+interface Match {
+  id: string;
+  users: string[];
+  createdAt: any;
+  lastInteraction?: any;
+  isMatched: boolean;
+}
 
 export default function MatchesScreen() {
-  const [selectedFilter, setSelectedFilter] = useState('All');
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [loading, setLoading] = useState(true);
+  const [potentialMatches, setPotentialMatches] = useState<UserProfile[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const swipeAnim = useRef(new Animated.ValueXY()).current;
+  const rotateAnim = swipeAnim.x.interpolate({
+    inputRange: [-width/2, 0, width/2],
+    outputRange: ['-10deg', '0deg', '10deg'],
+    extrapolate: 'clamp'
+  });
+  const likeOpacity = swipeAnim.x.interpolate({
+    inputRange: [0, width/4],
+    outputRange: [0, 1],
+    extrapolate: 'clamp'
+  });
+  const nopeOpacity = swipeAnim.x.interpolate({
+    inputRange: [-width/4, 0],
+    outputRange: [1, 0],
+    extrapolate: 'clamp'
+  });
 
-  React.useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, []);
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderMove: (_, { dx, dy }) => {
+      swipeAnim.setValue({ x: dx, y: dy });
+    },
+    onPanResponderRelease: (_, { dx, dy }) => {
+      const direction = Math.sign(dx);
+      const isActionActive = Math.abs(dx) > SWIPE_THRESHOLD;
+
+      if (isActionActive) {
+        Animated.timing(swipeAnim, {
+          toValue: { x: direction * width * 1.5, y: dy },
+          duration: 300,
+          useNativeDriver: true
+        }).start(() => {
+          handleSwipe(direction === 1);
+          setCurrentIndex(prevIndex => prevIndex + 1);
+          swipeAnim.setValue({ x: 0, y: 0 });
+        });
+      } else {
+        Animated.spring(swipeAnim, {
+          toValue: { x: 0, y: 0 },
+          friction: 5,
+          useNativeDriver: true
+        }).start();
+      }
+    }
+  });
+
+  const handleSwipe = async (isLike: boolean) => {
+    if (!user || currentIndex >= potentialMatches.length) return;
+
+    const targetUser = potentialMatches[currentIndex];
+    
+    try {
+      // Create or update match document
+      const matchesRef = collection(db, 'matches');
+      const matchQuery = query(
+        matchesRef,
+        where('users', 'array-contains', user.uid)
+      );
+      const matchSnapshot = await getDocs(matchQuery);
+      let existingMatch = matchSnapshot.docs.find(doc => 
+        doc.data().users.includes(targetUser.id)
+      );
+
+      if (existingMatch) {
+        // Update existing match
+        if (isLike) {
+          await updateDoc(doc(db, 'matches', existingMatch.id), {
+            isMatched: true,
+            lastInteraction: serverTimestamp()
+          });
+
+          // If both users liked each other, it's a match!
+          if (existingMatch.data().isMatched) {
+            // Create match notification for both users
+            try {
+              // Notify the target user
+              await createNotification(
+                'match',
+                user.uid,
+                targetUser.id
+              );
+              
+              // Notify the current user
+              await createNotification(
+                'match',
+                targetUser.id,
+                user.uid
+              );
+            } catch (error) {
+              console.error('Error creating match notification:', error);
+            }
+            
+            Alert.alert(
+              "It's a Match! 🎉",
+              `You and ${targetUser.displayName} liked each other!`,
+              [
+                { 
+                  text: "Send Message", 
+                  onPress: () => handleMessage(targetUser.id)
+                },
+                { text: "Keep Browsing" }
+              ]
+            );
+          }
+        }
+      } else {
+        // Create new match
+        await addDoc(matchesRef, {
+          users: [user.uid, targetUser.id],
+          createdAt: serverTimestamp(),
+          lastInteraction: serverTimestamp(),
+          isMatched: isLike
+        });
+      }
+    } catch (error) {
+      console.error('Error handling swipe:', error);
+    }
+  };
+
+  const fetchMatches = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      console.log('Fetching matches for user:', user.uid);
+      
+      // Get current user's profile
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!userDoc.exists()) {
+        console.error('Current user profile not found');
+        Alert.alert('Error', 'Failed to load user profile');
+        return;
+      }
+      
+      const currentUserProfile = userDoc.data() as UserProfile;
+      console.log('Current user profile:', currentUserProfile);
+
+      // Get all potential matches
+      const usersRef = collection(db, 'users');
+      const usersQuery = query(
+        usersRef,
+        where('id', '!=', user.uid)
+      );
+      
+      const [usersSnapshot, matchesSnapshot] = await Promise.all([
+        getDocs(usersQuery),
+        getDocs(query(
+          collection(db, 'matches'),
+          where('users', 'array-contains', user.uid)
+        ))
+      ]);
+
+      console.log('Found potential matches:', usersSnapshot.size);
+      console.log('Found existing matches:', matchesSnapshot.size);
+
+      // Get existing matches
+      const existingMatches = matchesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Match[];
+      setMatches(existingMatches);
+
+      // Filter out users that are already matched
+      const matchedUserIds = existingMatches
+        .filter(match => match.isMatched)
+        .flatMap(match => match.users)
+        .filter(id => id !== user.uid);
+
+      console.log('Already matched users:', matchedUserIds);
+
+      // Filter users client-side based on preferences
+      const users: UserProfile[] = [];
+      usersSnapshot.forEach((doc) => {
+        const userData = doc.data() as UserProfile;
+        // Make sure the user document has an id field
+        userData.id = doc.id;
+        
+        if (!matchedUserIds.includes(userData.id) && 
+            (!currentUserProfile.lookingFor || 
+             !userData.lookingFor || 
+             currentUserProfile.lookingFor === 'any' || 
+             userData.lookingFor === 'any' ||
+             currentUserProfile.lookingFor === userData.lookingFor)) {
+          users.push(userData);
+        }
+      });
+
+      console.log('Filtered matches count:', users.length);
+      setPotentialMatches(users);
+    } catch (error) {
+      console.error('Error fetching matches:', error);
+      Alert.alert('Error', 'Failed to load matches');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add debug effect
+  useEffect(() => {
+    console.log('Current matches state:', potentialMatches);
+  }, [potentialMatches]);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [user]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 2000);
+    fetchMatches().finally(() => setRefreshing(false));
   }, []);
 
-  const renderMatchCard = (match: typeof MATCHES[0], index: number) => {
-    const scale = new Animated.Value(1);
-    const opacity = new Animated.Value(1);
-    const translateX = new Animated.Value(50);
+  const handleMessage = async (userId: string) => {
+    if (!user) return;
+    try {
+      if (userId === user.uid) return;
+      
+      const chatRoomId = await createOrGetChatRoom(user.uid, userId);
+      router.push({
+        pathname: '/chat/[id]',
+        params: { id: chatRoomId }
+      });
+    } catch (error) {
+      console.error('Error starting chat:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to start chat. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
-    React.useEffect(() => {
-      Animated.parallel([
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-          delay: index * 100,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 500,
-          delay: index * 100,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }, []);
+  const renderMatchCard = (userProfile: UserProfile) => {
+    console.log('Rendering profile:', userProfile);
 
-    const onPressIn = () => {
-      Animated.parallel([
-        Animated.spring(scale, {
-          toValue: 0.98,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.9,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    };
-
-    const onPressOut = () => {
-      Animated.parallel([
-        Animated.spring(scale, {
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    };
-
-    return (
-      <Animated.View
-        key={match.id}
-        style={[
-          styles.cardContainer,
-          {
-            opacity,
-            transform: [{ scale }, { translateX }],
-          },
-        ]}
-      >
-        <TouchableOpacity
-          activeOpacity={0.95}
-          onPressIn={onPressIn}
-          onPressOut={onPressOut}
-          onPress={() => router.push('/(tabs)/profile' as any)}
-          style={styles.cardTouchable}
-        >
+    const renderImage = () => {
+      if (userProfile.profilePicture) {
+        return (
           <ImageBackground
-            source={{ uri: match.image }}
+            source={{ uri: userProfile.profilePicture }}
             style={styles.cardBackground}
             imageStyle={styles.cardImage}
           >
-            <LinearGradient
-              colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.7)']}
-              style={styles.cardContent}
-            >
-              <View style={styles.cardHeader}>
-                <View style={styles.userInfo}>
-                  <Text style={styles.userName}>{match.name}, {match.age}</Text>
-                  <Text style={styles.userBio}>{match.bio}</Text>
-                </View>
-                {match.newMatch && (
-                  <View style={styles.newMatchBadge}>
-                    <Text style={styles.newMatchText}>New Match</Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.cardFooter}>
-                <View style={styles.footerLeft}>
-                  <View style={styles.statusContainer}>
-                    <View style={[styles.statusDot, { 
-                      backgroundColor: match.lastActive === 'Online' ? '#4CAF50' : '#999' 
-                    }]} />
-                    <Text style={styles.statusText}>{match.lastActive}</Text>
-                  </View>
-                  <Text style={styles.distanceText}>{match.distance}</Text>
-                </View>
-
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <Feather name="message-circle" size={22} color="#FFF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionButton, styles.actionButtonPrimary]}>
-                    <Feather name="user" size={22} color="#FFF" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {match.lastMessage && (
-                <View style={styles.messagePreview}>
-                  <Feather name="message-square" size={16} color="#FFF" style={styles.messageIcon} />
-                  <Text style={styles.messageText} numberOfLines={1}>
-                    {match.lastMessage}
-                  </Text>
-                </View>
-              )}
-            </LinearGradient>
-
-            <View style={styles.interestsContainer}>
-              {match.interests.map((interest, i) => (
-                <View key={i} style={styles.interestChip}>
-                  <Text style={styles.interestText}>{interest}</Text>
-                </View>
-              ))}
-            </View>
+            {renderContent()}
           </ImageBackground>
-        </TouchableOpacity>
+        );
+      } else {
+        return (
+          <View style={[styles.cardBackground, { backgroundColor: '#f0f0f0' }]}>
+            <SvgUri
+              width="100%"
+              height="100%"
+              uri={require('../../assets/images/default-avatar.svg')}
+              style={styles.defaultAvatar}
+            />
+            {renderContent()}
+          </View>
+        );
+      }
+    };
+
+    const renderContent = () => (
+      <LinearGradient
+        colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.7)']}
+        style={styles.cardContent}
+      >
+        <Animated.View style={[styles.likeStamp, { opacity: likeOpacity }]}>
+          <Text style={styles.stampText}>LIKE</Text>
+        </Animated.View>
+        <Animated.View style={[styles.nopeStamp, { opacity: nopeOpacity }]}>
+          <Text style={styles.stampText}>NOPE</Text>
+        </Animated.View>
+
+        <View style={styles.cardHeader}>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>
+              {userProfile.displayName || userProfile.name || 'Anonymous'}{userProfile.age ? `, ${userProfile.age}` : ''}
+            </Text>
+            <Text style={styles.userBio}>{userProfile.bio || 'No bio yet'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.userDetails}>
+          {userProfile.work && (
+            <View style={styles.detailItem}>
+              <Feather name="briefcase" size={16} color="#FFF" />
+              <Text style={styles.detailText}>{userProfile.work}</Text>
+            </View>
+          )}
+          {userProfile.education && (
+            <View style={styles.detailItem}>
+              <Feather name="book" size={16} color="#FFF" />
+              <Text style={styles.detailText}>{userProfile.education}</Text>
+            </View>
+          )}
+          {userProfile.location && (
+            <View style={styles.detailItem}>
+              <Feather name="map-pin" size={16} color="#FFF" />
+              <Text style={styles.detailText}>{userProfile.location}</Text>
+            </View>
+          )}
+        </View>
+
+        {userProfile.interests && userProfile.interests.length > 0 && (
+          <View style={styles.interestsContainer}>
+            {userProfile.interests.map((interest, idx) => (
+              <View key={idx} style={styles.interestBadge}>
+                <Text style={styles.interestText}>{interest}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.nopeButton]}
+            onPress={() => handleSwipe(false)}
+          >
+            <AntDesign name="close" size={30} color="#FF4B6F" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.likeButton]}
+            onPress={() => handleSwipe(true)}
+          >
+            <AntDesign name="heart" size={30} color="#4CAF50" />
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    );
+
+    return (
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.cardContainer,
+          {
+            transform: [
+              { translateX: swipeAnim.x },
+              { translateY: swipeAnim.y },
+              { rotate: rotateAnim }
+            ]
+          }
+        ]}
+      >
+        {renderImage()}
       </Animated.View>
     );
   };
 
-  return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.title}>Matches</Text>
-          <TouchableOpacity style={styles.settingsButton}>
-            <Feather name="sliders" size={24} color="#262626" />
-          </TouchableOpacity>
-        </View>
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <MaterialCommunityIcons name="cards-heart-outline" size={64} color="#999" />
+      <Text style={styles.emptyText}>No more profiles to show</Text>
+      <Text style={styles.emptySubtext}>Try again later</Text>
+      <TouchableOpacity 
+        style={styles.refreshButton}
+        onPress={onRefresh}
+      >
+        <Text style={styles.refreshButtonText}>Refresh</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesContainer}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          <CategoryBadge label="All Matches" count={24} />
-          <CategoryBadge label="New" count={8} />
-          <CategoryBadge label="Messages" count={12} />
-          <CategoryBadge label="Nearby" count={5} />
-        </ScrollView>
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Discover</Text>
+        <Text style={styles.subtitle}>
+          Find your perfect match
+        </Text>
       </View>
 
-      {/* Matches List */}
-      <Animated.ScrollView
-        style={styles.matchesContainer}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.matchesContent}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#0095F6"
-          />
-        }
-      >
-        {MATCHES.map((match, index) => renderMatchCard(match, index))}
-      </Animated.ScrollView>
-    </Animated.View>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FF4B6F" />
+          <Text style={styles.loadingText}>Loading profiles...</Text>
+        </View>
+      ) : potentialMatches.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <MaterialCommunityIcons name="cards-heart-outline" size={64} color="#999" />
+          <Text style={styles.emptyText}>No more profiles to show</Text>
+          <Text style={styles.emptySubtext}>Try again later</Text>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={() => {
+              setCurrentIndex(0);
+              onRefresh();
+            }}
+          >
+            <Text style={styles.refreshButtonText}>Start Over</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.cardsContainer}>
+          {currentIndex < potentialMatches.length ? (
+            renderMatchCard(potentialMatches[currentIndex])
+          ) : (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="cards-heart-outline" size={64} color="#999" />
+              <Text style={styles.emptyText}>No more profiles to show</Text>
+              <Text style={styles.emptySubtext}>Try again later</Text>
+              <TouchableOpacity 
+                style={styles.refreshButton}
+                onPress={() => {
+                  setCurrentIndex(0);
+                  onRefresh();
+                }}
+              >
+                <Text style={styles.refreshButtonText}>Start Over</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F8F8',
+    backgroundColor: '#f5f5f5',
   },
   header: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingHorizontal: 15,
-    backgroundColor: '#FFF',
-    borderBottomRightRadius: 30,
-    borderBottomLeftRadius: 30,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+    padding: 15,
+    marginBottom: 10,
   },
   title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#262626',
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
   },
-  settingsButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F8F8F8',
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 5,
+  },
+  cardsContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  categoriesContainer: {
-    marginBottom: 20,
-  },
-  categoriesContent: {
-    paddingRight: 15,
-    gap: 10,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#E8E8E8',
-  },
-  categoryLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#262626',
-    marginRight: 8,
-  },
-  categoryCount: {
-    backgroundColor: '#0095F6',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  categoryCountText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  matchesContainer: {
-    flex: 1,
-  },
-  matchesContent: {
-    padding: 15,
-    gap: 15,
+    paddingHorizontal: 15,
   },
   cardContainer: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 20,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  cardTouchable: {
-    flex: 1,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    position: 'absolute',
   },
   cardBackground: {
     flex: 1,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
   },
   cardImage: {
     borderRadius: 20,
   },
   cardContent: {
-    flex: 1,
     padding: 20,
-    justifyContent: 'space-between',
+    borderRadius: 20,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -403,107 +533,143 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#FFF',
-    marginBottom: 4,
   },
   userBio: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#FFF',
     opacity: 0.9,
+    marginTop: 8,
   },
-  newMatchBadge: {
-    backgroundColor: '#0095F6',
+  userDetails: {
+    marginTop: 15,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailText: {
+    color: '#FFF',
+    fontSize: 14,
+    marginLeft: 8,
+  },
+  interestsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 15,
+  },
+  interestBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
   },
-  newMatchText: {
+  interestText: {
     color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  footerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusText: {
     fontSize: 14,
-    color: '#FFF',
-    opacity: 0.9,
-  },
-  distanceText: {
-    fontSize: 14,
-    color: '#FFF',
-    opacity: 0.9,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'center',
+    marginTop: 20,
   },
   actionButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
-  },
-  actionButtonPrimary: {
-    backgroundColor: '#0095F6',
-  },
-  interestsContainer: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    maxWidth: '50%',
-    justifyContent: 'flex-end',
-  },
-  interestChip: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  interestText: {
-    color: '#262626',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  messagePreview: {
-    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    marginTop: 12,
+    marginHorizontal: 10,
+    backgroundColor: '#FFF',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  messageIcon: {
-    marginRight: 8,
+  nopeButton: {
+    backgroundColor: '#FFF',
   },
-  messageText: {
-    color: '#FFF',
-    fontSize: 14,
+  likeButton: {
+    backgroundColor: '#FFF',
+  },
+  likeStamp: {
+    position: 'absolute',
+    top: '40%',
+    right: 40,
+    transform: [{ rotate: '30deg' }],
+    borderWidth: 4,
+    borderColor: '#4CAF50',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  nopeStamp: {
+    position: 'absolute',
+    top: '40%',
+    left: 40,
+    transform: [{ rotate: '-30deg' }],
+    borderWidth: 4,
+    borderColor: '#FF4B6F',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  stampText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+    fontSize: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 30,
+  },
+  emptyText: {
+    marginTop: 10,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#666',
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    marginTop: 5,
+    color: '#999',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  refreshButton: {
+    marginTop: 20,
+    backgroundColor: '#FF4B6F',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  refreshButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  defaultAvatar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });

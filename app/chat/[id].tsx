@@ -26,6 +26,8 @@ import {
   doc,
   serverTimestamp,
   getDoc,
+  getDocs,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, storage } from '../config/firebase';
 import { ChatMessage, ChatParticipant } from '../../src/types';
@@ -34,7 +36,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export default function ChatRoomScreen() {
   const { id } = useLocalSearchParams();
-  const { user } = useAuth();
+  const { user, refreshUnreadCount } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -42,6 +44,58 @@ export default function ChatRoomScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // Mark messages as read when chat is opened
+  const markMessagesAsRead = async () => {
+    if (!user || !id) return;
+    
+    try {
+      // Get all messages in this chat room
+      const messagesQuery = query(
+        collection(db, 'chatRooms', id as string, 'messages'),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const snapshot = await getDocs(messagesQuery);
+      
+      if (!snapshot.empty) {
+        // Use batch to update all unread messages sent by the other user
+        const batch = writeBatch(db);
+        let hasUnreadMessages = false;
+        
+        snapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          if (data.senderId !== user.uid && data.read === false) {
+            batch.update(doc.ref, { read: true });
+            hasUnreadMessages = true;
+          }
+        });
+        
+        // Update the lastMessage in the chat room if it's unread
+        const roomDoc = await getDoc(doc(db, 'chatRooms', id as string));
+        if (roomDoc.exists()) {
+          const roomData = roomDoc.data();
+          if (roomData.lastMessage && 
+              !roomData.lastMessage.read && 
+              roomData.lastMessage.senderId !== user.uid) {
+            batch.update(doc(db, 'chatRooms', id as string), {
+              'lastMessage.read': true
+            });
+          }
+        }
+        
+        // Only commit if there are changes to make
+        if (hasUnreadMessages) {
+          await batch.commit();
+          
+          // Refresh unread count after marking messages as read
+          await refreshUnreadCount();
+        }
+      }
+    } catch (error) {
+      console.error('Error marking messages as read:', error);
+    }
+  };
 
   useEffect(() => {
     if (!user || !id) return;
@@ -116,6 +170,9 @@ export default function ChatRoomScreen() {
       console.error('Chat room subscription error:', error);
       setLoading(false);
     });
+
+    // Mark messages as read when the chat is opened
+    markMessagesAsRead();
 
     return () => {
       unsubscribeRoom();
