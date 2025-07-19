@@ -24,6 +24,8 @@ import { auth, db } from '../config/firebase';
 import { UserProfile, UserUpdateData } from '../../src/types';
 import { getUnreadMessagesCount } from '../utils/chat';
 import { getUnreadNotificationsCount, subscribeToNotifications, NotificationWithUser } from '../utils/notifications';
+import { setupPresenceSync, updateUserPresence } from '../utils/presence';
+import { AppState } from 'react-native';
 
 interface AuthContextType {
   user: User | null;
@@ -160,6 +162,41 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, [user]);
 
+  // Handle app state changes for presence
+  useEffect(() => {
+    if (!user) return;
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        updateUserPresence(user.uid, true);
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        updateUserPresence(user.uid, false);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [user]);
+
+  // Set up presence sync on auth state change
+  useEffect(() => {
+    if (!user) return;
+
+    const setupPresence = async () => {
+      const cleanup = await setupPresenceSync(user.uid);
+      return cleanup;
+    };
+
+    const cleanupPresence = setupPresence();
+
+    return () => {
+      if (cleanupPresence) {
+        cleanupPresence.then(cleanup => cleanup && cleanup());
+      }
+    };
+  }, [user]);
+
   const setIsFirstLaunch = async (value: boolean) => {
     try {
       await AsyncStorage.setItem('hasLaunched', String(!value));
@@ -254,10 +291,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       const userCredential = await signInWithEmailAndPassword(auth, userData.email, password);
       const user = userCredential.user;
 
-      // Update last login time
-      await updateDoc(doc(db, 'users', user.uid), {
-        lastLoginAt: serverTimestamp()
-      });
+      // Update last login time and set online status
+      await Promise.all([
+        updateDoc(doc(db, 'users', user.uid), {
+          lastLoginAt: serverTimestamp()
+        }),
+        updateUserPresence(user.uid, true)
+      ]);
 
       // Fetch updated user data
       await fetchUserData(user.uid);
@@ -308,6 +348,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      if (user) {
+        await updateUserPresence(user.uid, false);
+      }
       await signOut(auth);
       setUser(null);
       setUserData(null);

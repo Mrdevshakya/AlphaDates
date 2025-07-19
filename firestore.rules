@@ -31,6 +31,12 @@ service cloud.firestore {
         );
     }
 
+    // User presence status
+    match /status/{userId} {
+      allow read: if isSignedIn();  // Any signed-in user can read status
+      allow write: if isSignedIn() && isOwner(userId);  // Only the user can update their own status
+    }
+
     // Notifications
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && (

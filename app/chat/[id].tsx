@@ -15,6 +15,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { usePresence } from '../hooks/usePresence';
 import {
   collection,
   query,
@@ -44,6 +45,7 @@ export default function ChatRoomScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const isParticipantOnline = usePresence(participant?.id);
 
   // Mark messages as read when chat is opened
   const markMessagesAsRead = async () => {
@@ -300,8 +302,11 @@ export default function ChatRoomScreen() {
         
         <View style={styles.headerInfo}>
           <Text style={styles.headerName}>{participant?.name}</Text>
-          <Text style={styles.headerStatus}>
-            {participant?.online ? 'Online' : 'Offline'}
+          <Text style={[
+            styles.headerStatus,
+            isParticipantOnline && styles.headerStatusOnline
+          ]}>
+            {isParticipantOnline ? 'Online' : 'Offline'}
           </Text>
         </View>
 
@@ -394,6 +399,9 @@ const styles = StyleSheet.create({
   headerStatus: {
     color: '#666',
     fontSize: 12,
+  },
+  headerStatusOnline: {
+    color: '#4CAF50',
   },
   headerButton: {
     marginLeft: 16,

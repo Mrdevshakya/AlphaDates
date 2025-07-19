@@ -19,6 +19,7 @@ import { db } from '../config/firebase';
 import { ChatRoom, ChatMessage, ChatParticipant } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { usePresence } from '../hooks/usePresence';
 
 export default function ChatScreen() {
   const { user, userData } = useAuth();
@@ -123,8 +124,14 @@ export default function ChatScreen() {
     return otherParticipantId ? participants[otherParticipantId] : undefined;
   };
 
-  const renderChatRoom = ({ item: chatRoom }: { item: ChatRoom }) => {
-    const participant = getParticipantInfo(chatRoom);
+  const ChatListItem = ({ chatRoom, participant, onPress }: { 
+    chatRoom: ChatRoom; 
+    participant: ChatParticipant | undefined;
+    onPress: () => void;
+  }) => {
+    const { user } = useAuth();
+    const isOnline = usePresence(participant?.id);
+    
     if (!participant) return null;
 
     const lastMessage = chatRoom.lastMessage;
@@ -133,7 +140,7 @@ export default function ChatScreen() {
     return (
       <TouchableOpacity
         style={styles.chatItem}
-        onPress={() => handleChatPress(chatRoom)}
+        onPress={onPress}
       >
         <View style={styles.avatarContainer}>
           {participant.photo ? (
@@ -143,7 +150,7 @@ export default function ChatScreen() {
               <Text style={styles.avatarText}>{participant.name[0]}</Text>
             </View>
           )}
-          {participant.online && <View style={styles.onlineIndicator} />}
+          {isOnline && <View style={styles.onlineIndicator} />}
         </View>
 
         <View style={styles.chatInfo}>
@@ -156,22 +163,32 @@ export default function ChatScreen() {
             )}
           </View>
 
-          {lastMessage && (
-            <View style={styles.lastMessage}>
-              <Text 
-                style={[
-                  styles.messageText,
-                  isUnread && styles.unreadText
-                ]}
-                numberOfLines={1}
-              >
-                {lastMessage.text}
-              </Text>
-              {isUnread && <View style={styles.unreadIndicator} />}
-            </View>
-          )}
+          <View style={styles.lastMessage}>
+            <Text 
+              style={[
+                styles.messageText,
+                isUnread && styles.unreadText
+              ]}
+              numberOfLines={1}
+            >
+              {lastMessage?.text}
+            </Text>
+            {isUnread && <View style={styles.unreadIndicator} />}
+          </View>
         </View>
       </TouchableOpacity>
+    );
+  };
+
+  const renderChatRoom = ({ item: chatRoom }: { item: ChatRoom }) => {
+    const participant = getParticipantInfo(chatRoom);
+    
+    return (
+      <ChatListItem
+        chatRoom={chatRoom}
+        participant={participant}
+        onPress={() => handleChatPress(chatRoom)}
+      />
     );
   };
 
