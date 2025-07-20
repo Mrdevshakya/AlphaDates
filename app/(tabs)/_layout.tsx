@@ -43,7 +43,7 @@ export default function TabLayout() {
               style={styles.notificationButton}
               onPress={handleNotificationPress}
             >
-              <Ionicons name="heart" size={24} color="#FF4B6A" />
+              <Ionicons name="heart-outline" size={24} color="#fff" />
               {unreadNotificationsCount > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>
@@ -74,7 +74,7 @@ export default function TabLayout() {
           title: 'Matches',
           headerTitle: 'Your Matches',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="heart" size={size} color={color} />
+            <Ionicons name="heart-outline" size={size} color={color} />
           ),
         }}
       />

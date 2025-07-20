@@ -39,7 +39,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   isLoading,
 }) => {
   const { userData, user: currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<'photos' | 'about' | 'likes'>('about');
+  const [activeTab, setActiveTab] = useState<'photos' | 'likes'>('photos');
   
   const isFollowing = user ? userData?.following?.includes(user.id) || false : false;
 
@@ -71,19 +71,6 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
         console.error('Error creating follow notification:', error);
       }
     }
-  };
-
-  const renderInfoItem = (icon: string, title: string, value: string | undefined) => {
-    if (!value) return null;
-    return (
-      <View style={styles.infoItem}>
-        <Ionicons name={icon as any} size={20} color="#0095F6" />
-        <View style={styles.infoText}>
-          <Text style={styles.infoTitle}>{title}</Text>
-          <Text style={styles.infoValue}>{value}</Text>
-        </View>
-      </View>
-    );
   };
 
   const renderPhoto = ({ item }: { item: string }) => (
@@ -131,6 +118,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   {user.age ? `, ${user.age}` : ''}
                 </Text>
                 <Text style={styles.username}>@{user.username}</Text>
+                {user.bio && (
+                  <Text style={styles.bio} numberOfLines={3}>{user.bio}</Text>
+                )}
                 {user.location && (
                   <View style={styles.locationContainer}>
                     <Ionicons name="location" size={16} color="white" />
@@ -194,16 +184,6 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 />
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.tab, activeTab === 'about' && styles.activeTab]}
-                onPress={() => setActiveTab('about')}
-              >
-                <Ionicons 
-                  name="person-outline" 
-                  size={24} 
-                  color={activeTab === 'about' ? '#FF4B6A' : '#666'} 
-                />
-              </TouchableOpacity>
-              <TouchableOpacity 
                 style={[styles.tab, activeTab === 'likes' && styles.activeTab]}
                 onPress={() => setActiveTab('likes')}
               >
@@ -231,65 +211,6 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <View style={styles.emptyState}>
                     <Ionicons name="images-outline" size={48} color="#666" />
                     <Text style={styles.emptyStateText}>No photos yet</Text>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {activeTab === 'about' && (
-              <View style={styles.content}>
-                {user.bio && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>About Me</Text>
-                    <Text style={styles.bio}>{user.bio}</Text>
-                  </View>
-                )}
-
-                {user.interests && user.interests.length > 0 && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Interests</Text>
-                    <View style={styles.interestsContainer}>
-                      {user.interests.map((interest, index) => (
-                        <View key={index} style={styles.interestTag}>
-                          <Text style={styles.interestText}>{interest}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Basic Info</Text>
-                  <BlurView intensity={10} tint="light" style={styles.infoContainer}>
-                    {renderInfoItem('school', 'Education', user.education)}
-                    {renderInfoItem('briefcase', 'Work', user.work)}
-                    {user.languages && renderInfoItem('language', 'Languages', user.languages.join(', '))}
-                    {renderInfoItem('body', 'Height', user.height)}
-                    {renderInfoItem('star', 'Zodiac', user.zodiac)}
-                  </BlurView>
-                </View>
-
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Lifestyle</Text>
-                  <BlurView intensity={10} tint="light" style={styles.infoContainer}>
-                    {renderInfoItem('wine', 'Drinking', user.drinking)}
-                    {renderInfoItem('leaf', 'Smoking', user.smoking)}
-                    {renderInfoItem('heart', 'Looking For', user.lookingFor)}
-                    {renderInfoItem('people', 'Children', user.children)}
-                    {renderInfoItem('paw', 'Pets', user.pets)}
-                  </BlurView>
-                </View>
-
-                {user.personality && user.personality.length > 0 && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Personality</Text>
-                    <View style={styles.personalityContainer}>
-                      {user.personality.map((trait, index) => (
-                        <View key={index} style={styles.personalityTag}>
-                          <Text style={styles.personalityText}>{trait}</Text>
-                        </View>
-                      ))}
-                    </View>
                   </View>
                 )}
               </View>
@@ -365,6 +286,13 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
   },
+  bio: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 5,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -425,61 +353,6 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.7,
   },
-  section: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
-  },
-  bio: {
-    fontSize: 16,
-    color: '#555',
-    lineHeight: 22,
-  },
-  interestsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  interestTag: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  interestText: {
-    color: '#555',
-    fontSize: 14,
-  },
-  infoContainer: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  infoText: {
-    marginLeft: 10,
-  },
-  infoTitle: {
-    fontSize: 14,
-    color: '#666',
-  },
-  infoValue: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-  },
   tabsContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
@@ -493,9 +366,6 @@ const styles = StyleSheet.create({
   activeTab: {
     borderBottomWidth: 2,
     borderBottomColor: '#FF4B6A',
-  },
-  content: {
-    paddingBottom: 20,
   },
   photosContainer: {
     padding: 20,
@@ -529,23 +399,7 @@ const styles = StyleSheet.create({
   },
   likesContainer: {
     padding: 20,
-  },
-  personalityContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  personalityTag: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  personalityText: {
-    color: '#555',
-    fontSize: 14,
-  },
+  }
 });
 
 export default UserProfileModal; 

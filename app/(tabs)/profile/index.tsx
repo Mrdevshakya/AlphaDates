@@ -16,6 +16,7 @@ import {
   Alert,
   Share,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -23,13 +24,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import FollowList from '../../components/FollowList';
-import { doc, updateDoc, arrayUnion, arrayRemove, getDoc, Firestore } from 'firebase/firestore';
+import Stories from '../../components/Stories';
+import { collection, query, where, orderBy, doc, getDoc, updateDoc, arrayRemove, arrayUnion, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { UserProfile } from '../../../src/types';
+import { UserProfile, Story } from '../../../src/types';
 import { createOrGetChatRoom } from '../../utils/chat';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { pickStoryMedia, uploadStory } from '../../utils/stories';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 40) / 3;
@@ -46,6 +49,9 @@ export default function ProfileScreen() {
   const isOwnProfile = !userId || userId === user?.uid;
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrRef, setQrRef] = useState<QRCodeRef | null>(null);
+  const [stories, setStories] = useState<Array<{ story: Story; user: UserProfile }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   
   useEffect(() => {
     if (!user) return;
@@ -53,10 +59,35 @@ export default function ProfileScreen() {
     const loadProfile = async () => {
       if (!isOwnProfile && userId) {
         // Load other user's profile
-        const userDoc = await getDoc(doc(db, 'users', userId));
+        const userRef = doc(db, 'users', userId as string);
+        const userDoc = await getDoc(userRef);
         if (userDoc.exists()) {
           setProfileData({ id: userDoc.id, ...userDoc.data() } as UserProfile);
         }
+      }
+
+      // Load stories
+      const targetUserId = isOwnProfile ? user.uid : userId;
+      if (targetUserId) {
+        const storiesQuery = query(
+          collection(db, 'stories'),
+          where('userId', '==', targetUserId),
+          orderBy('createdAt', 'desc')
+        );
+        
+        const storiesSnapshot = await getDocs(storiesQuery);
+        const storiesData = storiesSnapshot.docs
+          .map(doc => {
+            const user = isOwnProfile ? userData : profileData;
+            if (!user) return null;
+            return {
+              story: { id: doc.id, ...doc.data() } as Story,
+              user,
+            };
+          })
+          .filter((item): item is { story: Story; user: UserProfile } => item !== null);
+
+        setStories(storiesData);
       }
     };
     
@@ -65,7 +96,7 @@ export default function ProfileScreen() {
 
   const displayData = isOwnProfile ? userData : profileData;
 
-  const [activeTab, setActiveTab] = useState<'photos' | 'about' | 'likes'>('photos');
+  const [activeTab, setActiveTab] = useState<'photos' | 'likes'>('photos');
   const [refreshing, setRefreshing] = useState(false);
   const [showFollowList, setShowFollowList] = useState<'followers' | 'following' | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -149,14 +180,29 @@ export default function ProfileScreen() {
     try {
       setIsLoading(true);
 
+      // Initialize arrays if they don't exist
+      const currentUserRef = doc(db, 'users', user.uid);
+      if (!userData.following) {
+        await updateDoc(currentUserRef, {
+          following: []
+        });
+      }
+
       // Get references to both user documents
-      const targetUserRef = doc(db as Firestore, 'users', targetUserId);
+      const targetUserRef = doc(db, 'users', targetUserId);
       const targetUserDoc = await getDoc(targetUserRef);
       
       if (!targetUserDoc.exists()) {
         Alert.alert('Error', 'User not found');
         setIsLoading(false);
         return;
+      }
+
+      const targetUserData = targetUserDoc.data();
+      if (!targetUserData.followers) {
+        await updateDoc(targetUserRef, {
+          followers: []
+        });
       }
 
       // Update target user's followers list
@@ -167,14 +213,13 @@ export default function ProfileScreen() {
       });
 
       // Update current user's following list
-      const currentUserRef = doc(db as Firestore, 'users', user.uid);
       await updateDoc(currentUserRef, {
         following: isFollowing 
           ? arrayRemove(targetUserId)
           : arrayUnion(targetUserId)
       });
 
-      // Update local state
+      // Update local state with proper array initialization
       const updatedUserData = {
         ...userData,
         following: isFollowing
@@ -255,17 +300,62 @@ export default function ProfileScreen() {
     }
   };
 
-  const renderInfoItem = (icon: string, title: string, value: string | undefined) => {
-    if (!value) return null;
-    return (
-      <View style={styles.infoItem}>
-        <Ionicons name={icon as any} size={24} color="#0095F6" />
-        <View style={styles.infoText}>
-          <Text style={styles.infoTitle}>{title}</Text>
-          <Text style={styles.infoValue}>{value}</Text>
-        </View>
-      </View>
+  const handleStoryPress = (storyId: string) => {
+    // Navigate to story viewer
+    router.push({
+      pathname: '/stories/[id]',
+      params: { id: storyId }
+    });
+  };
+
+  const handleStoryAdded = async () => {
+    // Reload stories after a new one is added
+    if (!user || !userData) return;
+
+    const storiesQuery = query(
+      collection(db, 'stories'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
     );
+    
+    const storiesSnapshot = await getDocs(storiesQuery);
+    const storiesData = storiesSnapshot.docs.map(doc => ({
+      story: { id: doc.id, ...doc.data() } as Story,
+      user: userData,
+    }));
+
+    setStories(storiesData);
+  };
+
+  const handleAddStory = async () => {
+    if (!user) return;
+
+    try {
+      const mediaResult = await pickStoryMedia();
+      if (!mediaResult) return;
+
+      setUploading(true);
+      const mediaType = mediaResult.type === 'video' ? 'video' : 'image';
+
+      await uploadStory(
+        user.uid,
+        mediaResult.uri,
+        mediaType,
+        (progress) => setUploadProgress(progress)
+      );
+
+      setUploading(false);
+      setUploadProgress(0);
+      handleStoryAdded();
+    } catch (error) {
+      console.error('Error uploading story:', error);
+      Alert.alert(
+        'Error',
+        'Failed to upload story. Please try again.'
+      );
+      setUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const renderPhoto = ({ item }: { item: string }) => (
@@ -310,7 +400,7 @@ export default function ProfileScreen() {
         >
           <View style={styles.headerTop}>
             <View style={styles.headerTitle}>
-              <Text style={styles.logoText}>Profile</Text>
+              <Text style={styles.logoText}>@{displayData.username}</Text>
             </View>
             {isOwnProfile ? (
               <TouchableOpacity style={styles.settingsButton} onPress={handleSettings}>
@@ -329,8 +419,19 @@ export default function ProfileScreen() {
                 style={styles.profileImage}
               />
               {isOwnProfile && (
-                <TouchableOpacity style={styles.editPhotoButton} onPress={handleEditProfile}>
-                  <Ionicons name="add" size={20} color="white" />
+                <TouchableOpacity 
+                  style={styles.editPhotoButton} 
+                  onPress={handleAddStory}
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <View style={styles.uploadingContainer}>
+                      <ActivityIndicator size="small" color="#FF4B6A" />
+                      <Text style={styles.uploadingText}>{Math.round(uploadProgress)}%</Text>
+                    </View>
+                  ) : (
+                    <Ionicons name="add" size={20} color="white" />
+                  )}
                 </TouchableOpacity>
               )}
             </View>
@@ -340,7 +441,9 @@ export default function ProfileScreen() {
                 {displayData.name}
                 {displayData.age ? `, ${displayData.age}` : ''}
               </Text>
-              <Text style={styles.username}>@{displayData.username}</Text>
+              {displayData.bio && (
+                <Text style={styles.bio} numberOfLines={3}>{displayData.bio}</Text>
+              )}
               {displayData.location && (
                 <View style={styles.locationContainer}>
                   <Ionicons name="location" size={16} color="white" />
@@ -427,20 +530,6 @@ export default function ProfileScreen() {
           </View>
         </LinearGradient>
 
-        {/* Story Highlights */}
-        {displayData.photos && displayData.photos.length > 0 && (
-          <View style={styles.highlightsContainer}>
-            <Text style={styles.highlightsTitle}>Story Highlights</Text>
-            <FlatList
-              data={displayData.photos}
-              renderItem={renderStoryHighlight}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.highlightsList}
-            />
-          </View>
-        )}
-
         {/* Profile Tabs */}
         <View style={styles.tabsContainer}>
           <TouchableOpacity 
@@ -451,16 +540,6 @@ export default function ProfileScreen() {
               name="grid-outline" 
               size={24} 
               color={activeTab === 'photos' ? '#FF4B6A' : '#666'} 
-            />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'about' && styles.activeTab]}
-            onPress={() => setActiveTab('about')}
-          >
-            <Ionicons 
-              name="person-outline" 
-              size={24} 
-              color={activeTab === 'about' ? '#FF4B6A' : '#666'} 
             />
           </TouchableOpacity>
           <TouchableOpacity 
@@ -491,68 +570,6 @@ export default function ProfileScreen() {
               <View style={styles.emptyState}>
                 <Ionicons name="images-outline" size={48} color="#666" />
                 <Text style={styles.emptyStateText}>No photos yet</Text>
-                <TouchableOpacity style={styles.addButton} onPress={handleEditProfile}>
-                  <Text style={styles.addButtonText}>Add Photos</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-        {activeTab === 'about' && (
-          <View style={styles.content}>
-            {displayData.bio && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>About Me</Text>
-                <Text style={styles.bio}>{displayData.bio}</Text>
-              </View>
-            )}
-
-            {displayData.interests && displayData.interests.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Interests</Text>
-                <View style={styles.interestsContainer}>
-                  {displayData.interests.map((interest, index) => (
-                    <View key={index} style={styles.interestTag}>
-                      <Text style={styles.interestText}>{interest}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Basic Info</Text>
-              <BlurView intensity={10} tint="light" style={styles.infoContainer}>
-                {renderInfoItem('school', 'Education', displayData.education)}
-                {renderInfoItem('briefcase', 'Work', displayData.work)}
-                {displayData.languages && renderInfoItem('language', 'Languages', displayData.languages.join(', '))}
-                {renderInfoItem('body', 'Height', displayData.height)}
-                {renderInfoItem('star', 'Zodiac', displayData.zodiac)}
-              </BlurView>
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Lifestyle</Text>
-              <BlurView intensity={10} tint="light" style={styles.infoContainer}>
-                {renderInfoItem('wine', 'Drinking', displayData.drinking)}
-                {renderInfoItem('leaf', 'Smoking', displayData.smoking)}
-                {renderInfoItem('heart', 'Looking For', displayData.lookingFor)}
-                {renderInfoItem('people', 'Children', displayData.children)}
-                {renderInfoItem('paw', 'Pets', displayData.pets)}
-              </BlurView>
-            </View>
-
-            {displayData.personality && displayData.personality.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Personality</Text>
-                <View style={styles.personalityContainer}>
-                  {displayData.personality.map((trait, index) => (
-                    <View key={index} style={styles.personalityTag}>
-                      <Text style={styles.personalityText}>{trait}</Text>
-                    </View>
-                  ))}
-                </View>
               </View>
             )}
           </View>
@@ -852,9 +869,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   bio: {
-    color: 'white',
-    fontSize: 16,
-    lineHeight: 24,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
   },
   interestsContainer: {
     flexDirection: 'row',
@@ -869,47 +887,6 @@ const styles = StyleSheet.create({
     margin: 4,
   },
   interestText: {
-    color: 'white',
-    fontSize: 14,
-  },
-  infoContainer: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  infoText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  infoTitle: {
-    color: '#999',
-    fontSize: 14,
-  },
-  infoValue: {
-    color: 'white',
-    fontSize: 16,
-    marginTop: 2,
-  },
-  personalityContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -4,
-  },
-  personalityTag: {
-    backgroundColor: '#0095F6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    margin: 4,
-  },
-  personalityText: {
     color: 'white',
     fontSize: 14,
   },
@@ -930,16 +907,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 20,
   },
-  addButton: {
-    backgroundColor: '#FF4B6A',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  addButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
+
   exploreButton: {
     backgroundColor: '#FF4B6A',
     paddingHorizontal: 20,
@@ -1017,5 +985,18 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     marginLeft: 8,
+  },
+  uploadingContainer: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  uploadingText: {
+    color: '#FF4B6A',
+    fontSize: 8,
+    marginTop: 2,
   },
 });

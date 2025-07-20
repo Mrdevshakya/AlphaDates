@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,15 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Story, UserProfile } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { pickStoryMedia, uploadStory } from '../utils/stories';
 
 const { width } = Dimensions.get('window');
 const STORY_SIZE = 80;
@@ -21,12 +24,48 @@ const STORY_SPACING = 12;
 interface StoriesProps {
   stories: Array<{ story: Story; user: UserProfile }>;
   onStoryPress: (storyId: string) => void;
+  onStoryAdded?: () => void;
 }
 
-export default function Stories({ stories, onStoryPress }: StoriesProps) {
+export default function Stories({ stories, onStoryPress, onStoryAdded }: StoriesProps) {
   const { user: currentUser } = useAuth();
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  if (!stories.length) return null;
+  if (!stories.length && !currentUser) return null;
+
+  const handleAddStory = async () => {
+    if (!currentUser) return;
+
+    try {
+      const mediaResult = await pickStoryMedia();
+      if (!mediaResult) return;
+
+      setUploading(true);
+      const mediaType = mediaResult.type === 'video' ? 'video' : 'image';
+
+      await uploadStory(
+        currentUser.uid,
+        mediaResult.uri,
+        mediaType,
+        (progress) => setUploadProgress(progress)
+      );
+
+      setUploading(false);
+      setUploadProgress(0);
+      if (onStoryAdded) {
+        onStoryAdded();
+      }
+    } catch (error) {
+      console.error('Error uploading story:', error);
+      Alert.alert(
+        'Error',
+        'Failed to upload story. Please try again.'
+      );
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
 
   const userStories = stories.reduce((acc, { story, user }) => {
     if (!acc[user.id]) {
@@ -56,26 +95,39 @@ export default function Stories({ stories, onStoryPress }: StoriesProps) {
       >
         {/* Add Story Button */}
         {currentUser && (
-          <TouchableOpacity style={styles.storyItem}>
-            <View style={styles.addStoryContainer}>
-              <Image
-                source={{
-                  uri: currentUser.photoURL ||
-                    `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'User')}&background=random`,
-                }}
-                style={styles.storyImage}
-              />
-              <LinearGradient
-                colors={['#FF4B6A', '#FF8C9F']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.addButton}
-              >
-                <Ionicons name="add" size={20} color="white" />
-              </LinearGradient>
-            </View>
+          <TouchableOpacity 
+            style={styles.storyItem} 
+            onPress={handleAddStory}
+            disabled={uploading}
+          >
+            <LinearGradient
+              colors={['#FF4B6A', '#FF8C9F']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.storyRing}
+            >
+              <View style={styles.storyImageContainer}>
+                <Image
+                  source={{
+                    uri: currentUser.photoURL ||
+                      `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'User')}&background=random`,
+                  }}
+                  style={styles.storyImage}
+                />
+                {uploading ? (
+                  <View style={styles.uploadingContainer}>
+                    <ActivityIndicator size="small" color="#FF4B6A" />
+                    <Text style={styles.uploadingText}>{Math.round(uploadProgress)}%</Text>
+                  </View>
+                ) : (
+                  <View style={styles.addButton}>
+                    <Ionicons name="add" size={20} color="white" />
+                  </View>
+                )}
+              </View>
+            </LinearGradient>
             <Text style={styles.username} numberOfLines={1}>
-              Your Story
+              {uploading ? 'Uploading...' : 'Your Story'}
             </Text>
           </TouchableOpacity>
         )}
@@ -139,16 +191,6 @@ const styles = StyleSheet.create({
     marginRight: STORY_SPACING,
     width: STORY_SIZE,
   },
-  addStoryContainer: {
-    width: STORY_SIZE - 4,
-    height: STORY_SIZE - 4,
-    borderRadius: STORY_SIZE / 2,
-    borderWidth: 2,
-    borderColor: '#333',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   storyRing: {
     width: STORY_SIZE,
     height: STORY_SIZE,
@@ -176,10 +218,29 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
+    backgroundColor: '#FF4B6A',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#1a1a1a',
+  },
+  uploadingContainer: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderWidth: 2,
+    borderColor: '#FF4B6A',
+  },
+  uploadingText: {
+    color: '#FF4B6A',
+    fontSize: 8,
+    marginTop: 2,
   },
   storyCount: {
     position: 'absolute',

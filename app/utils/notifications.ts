@@ -232,3 +232,15 @@ export const deleteNotificationsByContent = async (
   
   await batch.commit();
 }; 
+
+const NotificationUtils = {
+  subscribeToNotifications,
+  getUnreadNotificationsCount,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  createNotification,
+  deleteNotification,
+  deleteNotificationsByContent,
+};
+
+export default NotificationUtils; 

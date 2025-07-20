@@ -104,64 +104,140 @@ export default function AccountSettings() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Account Settings</Text>
+          <Text style={styles.headerTitle}>Settings</Text>
           <View style={styles.placeholder} />
         </View>
       </LinearGradient>
 
       <ScrollView style={styles.content}>
         <BlurView intensity={10} tint="dark" style={styles.section}>
-          <Text style={styles.sectionTitle}>Profile Information</Text>
+          <Text style={styles.sectionTitle}>Account Management</Text>
           {renderSettingItem(
-            'person-outline',
-            'Name',
-            userData?.name,
-            () => router.push('/profile/edit')
-          )}
-          {renderSettingItem(
-            'at-outline',
-            'Username',
-            `@${userData?.username}`,
-            () => router.push('/profile/edit')
-          )}
-          {renderSettingItem(
-            'mail-outline',
-            'Email',
-            userData?.email,
-            () => router.push('/profile/edit')
-          )}
-          {renderSettingItem(
-            'call-outline',
-            'Phone Number',
-            userData?.mobileNumber || 'Not set',
-            () => router.push('/profile/edit')
+            'person-circle-outline',
+            'Account Center',
+            'Manage your profile information',
+            () => router.push('/profile/settings/account-center')
           )}
         </BlurView>
 
         <BlurView intensity={10} tint="dark" style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Information</Text>
+          <Text style={styles.sectionTitle}>Match Preferences</Text>
           {renderSettingItem(
-            'location-outline',
-            'Location',
-            userData?.location || 'Not set',
-            () => router.push('/profile/edit')
+            'filter-outline',
+            'Match Filters',
+            'Set your matching preferences',
+            () => {
+              Alert.alert('Coming Soon', 'Match filters will be available soon!');
+            }
           )}
           {renderSettingItem(
-            'briefcase-outline',
-            'Work',
-            userData?.work || 'Not set',
-            () => router.push('/profile/edit')
+            'compass-outline',
+            'Distance Range',
+            'Set maximum distance for matches',
+            () => {
+              Alert.alert('Coming Soon', 'Distance settings will be available soon!');
+            }
           )}
           {renderSettingItem(
-            'school-outline',
-            'Education',
-            userData?.education || 'Not set',
-            () => router.push('/profile/edit')
+            'heart-outline',
+            'Interest Tags',
+            'Manage your interests for better matches',
+            () => {
+              Alert.alert('Coming Soon', 'Interest management will be available soon!');
+            }
+          )}
+        </BlurView>
+
+        <BlurView intensity={10} tint="dark" style={styles.section}>
+          <Text style={styles.sectionTitle}>Security & Verification</Text>
+          {renderSettingItem(
+            'lock-closed-outline',
+            'Password & Security',
+            'Update password and security settings',
+            () => router.push('/profile/settings/security')
+          )}
+          {renderSettingItem(
+            'checkmark-circle-outline',
+            'Profile Verification',
+            'Verify your profile for trust',
+            () => {
+              Alert.alert('Coming Soon', 'Profile verification will be available soon!');
+            }
+          )}
+          {renderSettingItem(
+            'phone-portrait-outline',
+            'Connected Devices',
+            'Manage devices and sessions',
+            () => {
+              Alert.alert('Coming Soon', 'Device management will be available soon!');
+            }
+          )}
+        </BlurView>
+
+        <BlurView intensity={10} tint="dark" style={styles.section}>
+          <Text style={styles.sectionTitle}>App Settings</Text>
+          {renderSettingItem(
+            'language-outline',
+            'Language',
+            'Change app language',
+            () => {
+              Alert.alert(
+                'Select Language',
+                'Choose your preferred language',
+                [
+                  { text: 'English', onPress: () => {} },
+                  { text: 'Hindi', onPress: () => {} },
+                  { text: 'Cancel', style: 'cancel' }
+                ]
+              );
+            }
+          )}
+          {renderSettingItem(
+            'color-palette-outline',
+            'Theme',
+            'Change app appearance',
+            () => {
+              Alert.alert(
+                'Select Theme',
+                'Choose your preferred theme',
+                [
+                  { text: 'Light', onPress: () => {} },
+                  { text: 'Dark', onPress: () => {} },
+                  { text: 'System', onPress: () => {} },
+                  { text: 'Cancel', style: 'cancel' }
+                ]
+              );
+            }
+          )}
+          {renderSettingItem(
+            'help-circle-outline',
+            'Help & Support',
+            'Get help and contact support',
+            () => router.push('/profile/settings/help')
           )}
         </BlurView>
 
         <BlurView intensity={10} tint="dark" style={[styles.section, styles.dangerSection]}>
           <Text style={[styles.sectionTitle, styles.dangerText]}>Danger Zone</Text>
+          {renderSettingItem(
+            'pause-circle-outline',
+            'Pause Account',
+            'Temporarily hide your profile',
+            () => {
+              Alert.alert(
+                'Pause Account',
+                'Your profile will be hidden from all users. Continue?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Pause Account', 
+                    style: 'destructive',
+                    onPress: () => Alert.alert('Coming Soon', 'Account pausing will be available soon!')
+                  }
+                ]
+              );
+            }
+          )}
           {renderSettingItem(
             'log-out-outline',
             'Logout',
@@ -185,7 +261,6 @@ export default function AccountSettings() {
                     text: 'Delete',
                     style: 'destructive',
                     onPress: () => {
-                      // Handle account deletion
                       Alert.alert('Feature coming soon');
                     },
                   },

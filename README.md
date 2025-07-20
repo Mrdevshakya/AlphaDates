@@ -1,8 +1,8 @@
-# AFNNY - Dating App
+# AFNNY - Modern Dating App
 
-AFNNY is a modern dating application built with React Native and Expo, designed to help users find meaningful connections through a beautiful and intuitive interface. The app features a dark-themed UI with modern design elements and real-time capabilities.
+AFNNY is a sophisticated dating application built with React Native and Expo, designed to help users find meaningful connections through a beautiful and intuitive interface. The app features a dark-themed UI with modern design elements and real-time capabilities.
 
-## Key Features
+## 🌟 Key Features
 
 ### Authentication & Security
 - Secure email and username-based authentication
@@ -44,7 +44,7 @@ AFNNY is a modern dating application built with React Native and Expo, designed 
 - System notifications
 - Customizable notification settings
 
-## Technical Stack
+## 🛠️ Technical Stack
 
 ### Frontend
 - React Native
@@ -64,7 +64,7 @@ AFNNY is a modern dating application built with React Native and Expo, designed 
 - Presence system
 - End-to-end encryption
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 afnny-missmatch/
@@ -78,6 +78,9 @@ afnny-missmatch/
 │   │   ├── home.tsx         # Home feed
 │   │   ├── matches.tsx      # Matches list
 │   │   └── profile/         # Profile section
+│   │       ├── edit.tsx     # Profile editing
+│   │       ├── index.tsx    # Profile view
+│   │       └── settings/    # User settings
 │   ├── chat/                # Chat functionality
 │   │   └── [id].tsx         # Individual chat screen
 │   ├── components/          # Reusable components
@@ -98,10 +101,12 @@ afnny-missmatch/
 │       ├── notifications.ts # Notification handling
 │       └── presence.ts      # Online presence system
 ├── assets/                  # Static assets
-└── types/                   # Global type definitions
+│   ├── fonts/              # Custom fonts
+│   └── images/             # Image assets
+└── types/                  # Global type definitions
 ```
 
-## Security Features
+## 🔒 Security Features
 
 ### End-to-End Encryption
 - Message encryption using expo-crypto
@@ -121,7 +126,7 @@ afnny-missmatch/
 - Secure data transmission
 - Regular security audits
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
@@ -156,14 +161,76 @@ yarn install
 npx expo start
 ```
 
-## Contributing
+## 📱 Available Scripts
+
+```json
+{
+  "start": "expo start",
+  "reset-project": "node ./scripts/reset-project.js",
+  "android": "expo start --android",
+  "ios": "expo start --ios",
+  "web": "expo start --web",
+  "test": "jest --watchAll",
+  "lint": "expo lint"
+}
+```
+
+## 📦 Dependencies
+
+Key dependencies include:
+- expo ~52.0.35
+- firebase 9.23.0
+- @expo/vector-icons ^14.1.0
+- expo-router ~4.0.17
+- react-native 0.76.7
+- And various Expo modules for enhanced functionality
+
+## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Support
+## 💬 Support
 
 For support, please open an issue in the repository or contact the development team.
+
+## 🔐 Environment Variables
+
+Required environment variables:
+- Firebase configuration (see `app/config/firebase.ts`)
+- Other API keys as needed for additional services
+
+## 🌐 Browser Support
+
+The web version supports:
+- Chrome (latest)
+- Firefox (latest)
+- Safari (latest)
+- Edge (latest)
+
+## 📱 Mobile Support
+
+- iOS 13.0 or newer
+- Android 6.0 or newer
+
+## 🔄 State Management
+
+- React Context for global state
+- AsyncStorage for persistent storage
+- Firebase Realtime Database for real-time features
+
+## 🎨 Styling
+
+- Native styling with StyleSheet
+- Linear Gradient for modern UI effects
+- Blur effects for enhanced visuals
+- Dark theme support
+
+## 🧪 Testing
+
+- Jest for unit testing
+- Expo testing utilities
+- Firebase emulator support
