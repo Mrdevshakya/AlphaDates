@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-export const usePresence = (userId: string | undefined) => {
+const usePresence = (userId: string | undefined) => {
   const [isOnline, setIsOnline] = useState(false);
 
   useEffect(() => {
@@ -22,4 +22,6 @@ export const usePresence = (userId: string | undefined) => {
   }, [userId]);
 
   return isOnline;
-}; 
+};
+
+export default usePresence; 

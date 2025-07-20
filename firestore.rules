@@ -31,6 +31,18 @@ service cloud.firestore {
         );
     }
 
+    function isMatchParticipant(users) {
+      return isSignedIn() && request.auth.uid in users;
+    }
+
+    // Matches
+    match /matches/{matchId} {
+      allow read: if isSignedIn() && isMatchParticipant(resource.data.users);
+      allow create: if isSignedIn() && isMatchParticipant(request.resource.data.users);
+      allow update: if isSignedIn() && isMatchParticipant(resource.data.users);
+      allow delete: if false;  // Matches should not be deleted
+    }
+
     // User presence status
     match /status/{userId} {
       allow read: if isSignedIn();  // Any signed-in user can read status

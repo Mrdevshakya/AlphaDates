@@ -14,6 +14,8 @@ import {
   RefreshControl,
   Modal,
   Alert,
+  Share,
+  StatusBar,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -25,15 +27,25 @@ import { doc, updateDoc, arrayUnion, arrayRemove, getDoc, Firestore } from 'fire
 import { db } from '../../config/firebase';
 import { UserProfile } from '../../../src/types';
 import { createOrGetChatRoom } from '../../utils/chat';
+import QRCode from 'react-native-qrcode-svg';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 40) / 3;
+const QR_CODE_SIZE = width * 0.7;
+
+interface QRCodeRef {
+  toDataURL: (callback: (dataURL: string) => void) => void;
+}
 
 export default function ProfileScreen() {
   const { userId } = useLocalSearchParams();
   const { user, userData, setUserData, logout } = useAuth();
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
   const isOwnProfile = !userId || userId === user?.uid;
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrRef, setQrRef] = useState<QRCodeRef | null>(null);
   
   useEffect(() => {
     if (!user) return;
@@ -68,11 +80,56 @@ export default function ProfileScreen() {
   };
 
   const handleEditProfile = () => {
-    router.push('edit');
+    router.push('/profile/edit');
   };
 
   const handleSettings = () => {
     router.push('/profile/settings/account');
+  };
+
+  const handleShareProfile = () => {
+    setShowQRModal(true);
+  };
+
+  const handleCloseQR = () => {
+    setShowQRModal(false);
+  };
+
+  const saveQRCode = async () => {
+    if (!qrRef) return;
+
+    try {
+      // Get QR code as base64 string
+      const qrImage = await new Promise<string>((resolve) => {
+        qrRef.toDataURL((dataURL: string) => resolve(dataURL));
+      });
+
+      if (Platform.OS === 'android' || Platform.OS === 'ios') {
+        // Save QR code to temporary file
+        const filePath = `${FileSystem.cacheDirectory}qr-code.png`;
+        await FileSystem.writeAsStringAsync(filePath, qrImage, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Share the QR code
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(filePath);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving QR code:', error);
+    }
+  };
+
+  const handleShare = async () => {
+    const profileUrl = `afnny-missmatch://profile/${userId || user?.uid}`;
+    try {
+      await Share.share({
+        message: `Check out my profile on Amity Missmatch: ${profileUrl}`,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
   };
 
   const handleRefresh = async () => {
@@ -273,7 +330,7 @@ export default function ProfileScreen() {
               />
               {isOwnProfile && (
                 <TouchableOpacity style={styles.editPhotoButton} onPress={handleEditProfile}>
-                  <Ionicons name="camera" size={20} color="white" />
+                  <Ionicons name="add" size={20} color="white" />
                 </TouchableOpacity>
               )}
             </View>
@@ -334,7 +391,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity style={styles.actionButton} onPress={handleEditProfile}>
                   <Text style={styles.actionButtonText}>Edit Profile</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity style={styles.actionButton} onPress={handleShareProfile}>
                   <Text style={styles.actionButtonText}>Share Profile</Text>
                 </TouchableOpacity>
               </>
@@ -361,6 +418,9 @@ export default function ProfileScreen() {
                   <Text style={styles.actionButtonText}>
                     {isLoading ? 'Loading...' : (userData?.following?.includes(typeof userId === 'string' ? userId : '') ? 'Unfollow' : 'Follow')}
                   </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionButton} onPress={handleShareProfile}>
+                  <Text style={styles.actionButtonText}>Share Profile</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -516,6 +576,45 @@ export default function ProfileScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* QR Code Modal */}
+      <Modal
+        visible={showQRModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseQR}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.qrModalContent}>
+            <TouchableOpacity style={styles.closeButton} onPress={handleCloseQR}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+
+            <Text style={styles.modalTitle}>Share Profile</Text>
+            <Text style={styles.modalSubtitle}>Scan this QR code to view profile</Text>
+
+            <View style={styles.qrContainer}>
+              <QRCode
+                value={`afnny-missmatch://profile/${userId || user?.uid}`}
+                size={QR_CODE_SIZE}
+                getRef={(ref) => setQrRef(ref)}
+              />
+            </View>
+
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity style={styles.modalButton} onPress={saveQRCode}>
+                <Ionicons name="download-outline" size={24} color="white" />
+                <Text style={styles.modalButtonText}>Save QR Code</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.modalButton} onPress={handleShare}>
+                <Ionicons name="share-social-outline" size={24} color="white" />
+                <Text style={styles.modalButtonText}>Share Link</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Follow List Modal */}
       <Modal
@@ -853,5 +952,70 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.7,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qrModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    width: width * 0.9,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    zIndex: 1,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
+    marginTop: 20,
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 30,
+  },
+  qrContainer: {
+    padding: 20,
+    backgroundColor: 'white',
+    borderRadius: 15,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    marginBottom: 30,
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    marginHorizontal: 10,
+  },
+  modalButtonText: {
+    color: 'white',
+    fontSize: 16,
+    marginLeft: 8,
   },
 });

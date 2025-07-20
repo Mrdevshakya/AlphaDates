@@ -19,7 +19,7 @@ import { db } from '../config/firebase';
 import { ChatRoom, ChatMessage, ChatParticipant } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { usePresence } from '../hooks/usePresence';
+import usePresence from '../hooks/usePresence';
 
 export default function ChatScreen() {
   const { user, userData } = useAuth();

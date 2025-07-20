@@ -24,7 +24,7 @@ import { auth, db } from '../config/firebase';
 import { UserProfile, UserUpdateData } from '../../src/types';
 import { getUnreadMessagesCount } from '../utils/chat';
 import { getUnreadNotificationsCount, subscribeToNotifications, NotificationWithUser } from '../utils/notifications';
-import { setupPresenceSync, updateUserPresence } from '../utils/presence';
+import presence from '../utils/presence';
 import { AppState } from 'react-native';
 
 interface AuthContextType {
@@ -168,9 +168,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        updateUserPresence(user.uid, true);
+        presence.updateUserPresence(user.uid, true);
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
-        updateUserPresence(user.uid, false);
+        presence.updateUserPresence(user.uid, false);
       }
     });
 
@@ -184,7 +184,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     const setupPresence = async () => {
-      const cleanup = await setupPresenceSync(user.uid);
+      const cleanup = await presence.setupPresenceSync(user.uid);
       return cleanup;
     };
 
@@ -296,7 +296,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         updateDoc(doc(db, 'users', user.uid), {
           lastLoginAt: serverTimestamp()
         }),
-        updateUserPresence(user.uid, true)
+        presence.updateUserPresence(user.uid, true)
       ]);
 
       // Fetch updated user data
@@ -349,7 +349,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       if (user) {
-        await updateUserPresence(user.uid, false);
+        await presence.updateUserPresence(user.uid, false);
       }
       await signOut(auth);
       setUser(null);

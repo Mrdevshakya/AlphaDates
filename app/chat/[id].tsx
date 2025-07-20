@@ -15,7 +15,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import { usePresence } from '../hooks/usePresence';
+import usePresence from '../hooks/usePresence';
 import {
   collection,
   query,

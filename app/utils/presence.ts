@@ -1,7 +1,7 @@
 import { db } from '../config/firebase';
-import { doc, setDoc, serverTimestamp, onDisconnect } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-export const updateUserPresence = async (userId: string, isOnline: boolean) => {
+const updateUserPresence = async (userId: string, isOnline: boolean) => {
   if (!userId) return;
   
   try {
@@ -15,7 +15,7 @@ export const updateUserPresence = async (userId: string, isOnline: boolean) => {
   }
 };
 
-export const setupPresenceSync = async (userId: string) => {
+const setupPresenceSync = async (userId: string) => {
   if (!userId) return;
 
   try {
@@ -32,4 +32,11 @@ export const setupPresenceSync = async (userId: string) => {
   } catch (error) {
     console.error('Error setting up presence sync:', error);
   }
-}; 
+};
+
+const presence = {
+  updateUserPresence,
+  setupPresenceSync,
+};
+
+export default presence; 

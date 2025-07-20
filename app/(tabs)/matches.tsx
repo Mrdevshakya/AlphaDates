@@ -13,12 +13,12 @@ import {
   ImageBackground,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
-import { MaterialCommunityIcons, Feather, AntDesign } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Feather, AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { BlurView } from 'expo-blur';
-import { SvgUri } from 'react-native-svg';
 import { createOrGetChatRoom } from '../utils/chat';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -37,6 +37,7 @@ import {
 import { db } from '../config/firebase';
 import { UserProfile } from '../../src/types';
 import { createNotification } from '../utils/notifications';
+import usePresence from '../hooks/usePresence';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 30;
@@ -51,13 +52,19 @@ interface Match {
   isMatched: boolean;
 }
 
+interface MatchedUser extends UserProfile {
+  isOnline: boolean;
+}
+
 export default function MatchesScreen() {
   const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [potentialMatches, setPotentialMatches] = useState<UserProfile[]>([]);
+  const [matchedUsers, setMatchedUsers] = useState<MatchedUser[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [activeTab, setActiveTab] = useState<'discover' | 'matches'>('discover');
   const swipeAnim = useRef(new Animated.ValueXY()).current;
   const rotateAnim = swipeAnim.x.interpolate({
     inputRange: [-width/2, 0, width/2],
@@ -255,6 +262,45 @@ export default function MatchesScreen() {
     }
   };
 
+  const fetchMatchedUsers = async () => {
+    if (!user) return;
+    try {
+      const matchedUsersData: MatchedUser[] = [];
+      
+      // Get all matches where isMatched is true
+      const matchesRef = collection(db, 'matches');
+      const matchesQuery = query(
+        matchesRef,
+        where('users', 'array-contains', user.uid),
+        where('isMatched', '==', true)
+      );
+      
+      const matchesSnapshot = await getDocs(matchesQuery);
+      
+      for (const matchDoc of matchesSnapshot.docs) {
+        const matchData = matchDoc.data();
+        const otherUserId = matchData.users.find((id: string) => id !== user.uid);
+        
+        if (otherUserId) {
+          const userDoc = await getDoc(doc(db, 'users', otherUserId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserProfile;
+            matchedUsersData.push({
+              ...userData,
+              id: userDoc.id,
+              isOnline: false // Will be updated by usePresence hook
+            });
+          }
+        }
+      }
+      
+      setMatchedUsers(matchedUsersData);
+    } catch (error) {
+      console.error('Error fetching matched users:', error);
+      Alert.alert('Error', 'Failed to load matches');
+    }
+  };
+
   // Add debug effect
   useEffect(() => {
     console.log('Current matches state:', potentialMatches);
@@ -263,6 +309,12 @@ export default function MatchesScreen() {
   useEffect(() => {
     fetchMatches();
   }, [user]);
+
+  useEffect(() => {
+    if (activeTab === 'matches') {
+      fetchMatchedUsers();
+    }
+  }, [activeTab]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -420,56 +472,125 @@ export default function MatchesScreen() {
     </View>
   );
 
+  const renderMatchedUsers = () => {
+    if (matchedUsers.length === 0) {
+      return (
+        <View style={styles.emptyMatchesContainer}>
+          <MaterialCommunityIcons name="heart-multiple" size={64} color="#FF4B6A" />
+          <Text style={styles.emptyMatchesText}>No matches yet</Text>
+          <Text style={styles.emptyMatchesSubtext}>Start swiping to find your matches!</Text>
+          <TouchableOpacity 
+            style={styles.startMatchingButton}
+            onPress={() => setActiveTab('discover')}
+          >
+            <Text style={styles.startMatchingButtonText}>Start Matching</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView
+        style={styles.matchedUsersContainer}
+        contentContainerStyle={styles.matchedUsersContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchMatchedUsers().finally(() => setRefreshing(false));
+            }}
+          />
+        }
+      >
+        {matchedUsers.map((matchedUser) => {
+          const isOnline = usePresence(matchedUser.id);
+          return (
+            <TouchableOpacity
+              key={matchedUser.id}
+              style={styles.matchedUserCard}
+              onPress={() => handleMessage(matchedUser.id)}
+            >
+              <ImageBackground
+                source={
+                  matchedUser.photos?.[0]
+                    ? { uri: matchedUser.photos[0] }
+                    : require('../../assets/images/default-avatar.svg')
+                }
+                style={styles.matchedUserImage}
+                imageStyle={styles.matchedUserImageStyle}
+              >
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.8)']}
+                  style={styles.matchedUserGradient}
+                >
+                  <View style={styles.matchedUserInfo}>
+                    <View style={styles.matchedUserNameRow}>
+                      <Text style={styles.matchedUserName}>
+                        {matchedUser.name}
+                      </Text>
+                      {isOnline && <View style={styles.onlineIndicator} />}
+                    </View>
+                    <Text style={styles.matchedUserBio} numberOfLines={2}>
+                      {matchedUser.bio || 'No bio yet'}
+                    </Text>
+                  </View>
+                </LinearGradient>
+              </ImageBackground>
+              <TouchableOpacity
+                style={styles.messageButton}
+                onPress={() => handleMessage(matchedUser.id)}
+              >
+                <Ionicons name="chatbubble" size={20} color="#FFF" />
+                <Text style={styles.messageButtonText}>Message</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Discover</Text>
-        <Text style={styles.subtitle}>
-          Find your perfect match
-        </Text>
+        <Text style={styles.title}>Matches</Text>
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'discover' && styles.activeTab]}
+            onPress={() => setActiveTab('discover')}
+          >
+            <Text style={[styles.tabText, activeTab === 'discover' && styles.activeTabText]}>
+              Discover
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'matches' && styles.activeTab]}
+            onPress={() => setActiveTab('matches')}
+          >
+            <Text style={[styles.tabText, activeTab === 'matches' && styles.activeTabText]}>
+              Matches
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF4B6F" />
-          <Text style={styles.loadingText}>Loading profiles...</Text>
+          <ActivityIndicator size="large" color="#FF4B6A" />
+          <Text style={styles.loadingText}>Loading...</Text>
         </View>
-      ) : potentialMatches.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="cards-heart-outline" size={64} color="#999" />
-          <Text style={styles.emptyText}>No more profiles to show</Text>
-          <Text style={styles.emptySubtext}>Try again later</Text>
-          <TouchableOpacity 
-            style={styles.refreshButton}
-            onPress={() => {
-              setCurrentIndex(0);
-              onRefresh();
-            }}
-          >
-            <Text style={styles.refreshButtonText}>Start Over</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
+      ) : activeTab === 'discover' ? (
         <View style={styles.cardsContainer}>
           {currentIndex < potentialMatches.length ? (
             renderMatchCard(potentialMatches[currentIndex])
           ) : (
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="cards-heart-outline" size={64} color="#999" />
-              <Text style={styles.emptyText}>No more profiles to show</Text>
-              <Text style={styles.emptySubtext}>Try again later</Text>
-              <TouchableOpacity 
-                style={styles.refreshButton}
-                onPress={() => {
-                  setCurrentIndex(0);
-                  onRefresh();
-                }}
-              >
-                <Text style={styles.refreshButtonText}>Start Over</Text>
-              </TouchableOpacity>
-            </View>
+            renderEmptyState()
           )}
         </View>
+      ) : (
+        renderMatchedUsers()
       )}
     </View>
   );
@@ -478,21 +599,151 @@ export default function MatchesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#1a1a1a',
   },
   header: {
-    padding: 15,
-    marginBottom: 10,
+    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 20,
+    backgroundColor: '#1a1a1a',
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#FFF',
+    marginBottom: 20,
   },
-  subtitle: {
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 20,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+  },
+  activeTab: {
+    backgroundColor: '#FF4B6A',
+  },
+  tabText: {
+    color: '#999',
     fontSize: 16,
-    color: '#666',
-    marginTop: 5,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  activeTabText: {
+    color: '#FFF',
+  },
+  matchedUsersContainer: {
+    flex: 1,
+  },
+  matchedUsersContent: {
+    padding: 15,
+  },
+  matchedUserCard: {
+    marginBottom: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#2a2a2a',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  matchedUserImage: {
+    height: 200,
+    justifyContent: 'flex-end',
+  },
+  matchedUserImageStyle: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  matchedUserGradient: {
+    padding: 15,
+  },
+  matchedUserInfo: {
+    justifyContent: 'flex-end',
+  },
+  matchedUserNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  matchedUserName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginRight: 8,
+  },
+  onlineIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#4CAF50',
+    marginLeft: 8,
+  },
+  matchedUserBio: {
+    fontSize: 14,
+    color: '#CCC',
+    marginTop: 4,
+  },
+  messageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF4B6A',
+    padding: 12,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  messageButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  emptyMatchesContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  emptyMatchesText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 20,
+  },
+  emptyMatchesSubtext: {
+    fontSize: 16,
+    color: '#999',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  startMatchingButton: {
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 20,
+  },
+  startMatchingButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#999',
+    fontSize: 16,
+    marginTop: 12,
   },
   cardsContainer: {
     flex: 1,
@@ -623,16 +874,6 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     letterSpacing: 2,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    color: '#666',
-    fontSize: 16,
   },
   emptyContainer: {
     flex: 1,
