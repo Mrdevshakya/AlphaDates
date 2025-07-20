@@ -135,7 +135,7 @@ afnny-missmatch/
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/afnny-missmatch.git
+git clone https://github.com/Mrdevshakya/afnny-missmatch.git
 cd afnny-missmatch
 ```
 
