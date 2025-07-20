@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Afnny - Find Your Perfect Match at Amity University Gwalior! 💝</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="gradient-bg"></div>
+    <div class="floating-hearts"></div>
+    
+    <div class="container">
+        <nav class="nav-bar">
+            <div class="logo-container">
+                <img src="../assets/images/logo.svg" alt="Afnny Logo" class="logo">
+            </div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#about" class="nav-link">About</a>
+                <a href="#join" class="nav-link cta-button">Join Now</a>
+            </div>
+        </nav>
+
+        <main>
+            <section class="hero" id="hero">
+                <div class="hero-content">
+                    <h1 class="main-title">Find Your Perfect Match at Amity University</h1>
+                    <p class="hero-subtitle">Where Meaningful Connections Begin</p>
+                    <div class="hero-cta">
+                        <button class="cta-primary pulse-button" onclick="document.getElementById('join').scrollIntoView({behavior: 'smooth'})">
+                            Start Your Journey
+                            <i class="fas fa-heart"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="hero-visual">
+                    <div class="profile-cards">
+                        <div class="profile-card">
+                            <div class="card-image"></div>
+                            <div class="card-info">
+                                <h3>Priya, 20</h3>
+                                <p>B.Tech Computer Science</p>
+                            </div>
+                        </div>
+                        <div class="profile-card">
+                            <div class="card-image"></div>
+                            <div class="card-info">
+                                <h3>Rahul, 21</h3>
+                                <p>BBA Marketing</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="features" id="features">
+                <h2 class="section-title">Why Choose Afnny?</h2>
+                <div class="features-container">
+                    <div class="features-grid">
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="fas fa-user-shield"></i>
+                            </div>
+                            <h3>Verified Profiles</h3>
+                            <p>Connect with real Amity students</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="fas fa-heart"></i>
+                            </div>
+                            <h3>Smart Matching</h3>
+                            <p>Find compatible matches based on interests</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="fas fa-comments"></i>
+                            </div>
+                            <h3>Safe Chat</h3>
+                            <p>Private and secure messaging</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="fas fa-calendar-alt"></i>
+                            </div>
+                            <h3>Campus Events</h3>
+                            <p>Meet your matches at university events</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="about" id="about">
+                <div class="about-content">
+                    <h2 class="section-title">Your Story Begins Here</h2>
+                    <p class="about-text">Afnny is exclusively designed for Amity University Gwalior students, creating a safe and familiar environment to meet like-minded people, make meaningful connections, and perhaps find that special someone.</p>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number">1000</div>
+                            <div class="stat-label">Active Users</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">500</div>
+                            <div class="stat-label">Successful Matches</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">100</div>
+                            <div class="stat-label">Safe & Secure</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="countdown-section">
+                <h2 class="section-title">Launching Soon at Amity University</h2>
+                <div class="countdown-container">
+                    <div class="countdown-grid">
+                        <div class="countdown-card">
+                            <div class="countdown-number" id="days">00</div>
+                            <div class="countdown-label">Days</div>
+                        </div>
+                        <div class="countdown-card">
+                            <div class="countdown-number" id="hours">00</div>
+                            <div class="countdown-label">Hours</div>
+                        </div>
+                        <div class="countdown-card">
+                            <div class="countdown-number" id="minutes">00</div>
+                            <div class="countdown-label">Minutes</div>
+                        </div>
+                        <div class="countdown-card">
+                            <div class="countdown-number" id="seconds">00</div>
+                            <div class="countdown-label">Seconds</div>
+                        </div>
+                    </div>
+                    <div class="launch-date">
+                        <i class="fas fa-calendar-alt"></i> Launch Date: August 18th, 2025
+                    </div>
+                </div>
+            </section>
+
+            <section class="join" id="join">
+                <div class="join-content">
+                    <h2 class="section-title">Join Afnny Today</h2>
+                    <div class="join-benefits">
+                        <h3>Create Your Profile Now:</h3>
+                        <ul class="benefits-list">
+                            <li><i class="fas fa-check"></i> Meet students from your department</li>
+                            <li><i class="fas fa-check"></i> Find matches with similar interests</li>
+                            <li><i class="fas fa-check"></i> Connect safely and securely</li>
+                            <li><i class="fas fa-check"></i> Attend exclusive events</li>
+                        </ul>
+                    </div>
+                    <form id="join-form" class="join-form">
+                        <div class="form-group">
+                            <input type="email" placeholder="Enter your Amity email" required class="form-input">
+                            <button type="submit" class="submit-btn">
+                                <span class="btn-text">Create Profile</span>
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                        </div>
+                        <p class="form-note">* Only for Amity University Gwalior students</p>
+                    </form>
+                </div>
+            </section>
+
+            <section class="testimonials">
+                <h2 class="section-title">Success Stories</h2>
+                <div class="testimonials-grid">
+                    <div class="testimonial-card">
+                        <div class="quote">"Thanks to Afnny, I found someone who shares my passion for technology and music!"</div>
+                        <div class="author">- Aditya & Neha, B.Tech</div>
+                    </div>
+                    <div class="testimonial-card">
+                        <div class="quote">"Met my best friend here. We're in different courses but have so much in common!"</div>
+                        <div class="author">- Riya, BBA</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="site-footer">
+            <div class="social-links">
+                <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
+                <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
+                <a href="#" class="social-link"><i class="fab fa-snapchat"></i></a>
+            </div>
+            <p class="copyright">© 2024 Afnny. Made with <i class="fas fa-heart"></i> at Amity University Gwalior</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
