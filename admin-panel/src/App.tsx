@@ -13,6 +13,7 @@ import Moderation from './pages/Moderation';
 import Analytics from './pages/Analytics';
 import Notifications from './pages/Notifications';
 import Settings from './pages/Settings';
+import Coupons from './pages/Coupons';
 
 // Create a custom theme
 const theme = createTheme({
@@ -99,6 +100,7 @@ function App() {
                       <Route path="/moderation" element={<Moderation />} />
                       <Route path="/analytics" element={<Analytics />} />
                       <Route path="/notifications" element={<Notifications />} />
+                      <Route path="/coupons" element={<Coupons />} />
                       <Route path="/settings" element={<Settings />} />
                     </Routes>
                   </Layout>

@@ -35,25 +35,54 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid in users;
     }
 
+    function isBlocked(userId) {
+      return userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.blockedUsers;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isModerator() {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'moderator' ||
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    // Admin Collection
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // Matches
     match /matches/{matchId} {
-      allow read: if isSignedIn() && isMatchParticipant(resource.data.users);
+      allow read: if isSignedIn() && (isMatchParticipant(resource.data.users) || isAdmin());
       allow create: if isSignedIn() && isMatchParticipant(request.resource.data.users);
-      allow update: if isSignedIn() && isMatchParticipant(resource.data.users);
-      allow delete: if false;  // Matches should not be deleted
+      allow update: if isSignedIn() && (isMatchParticipant(resource.data.users) || isAdmin());
+      allow delete: if isAdmin();  // Only admins can delete matches
     }
 
     // User presence status
     match /status/{userId} {
-      allow read: if isSignedIn();  // Any signed-in user can read status
-      allow write: if isSignedIn() && isOwner(userId);  // Only the user can update their own status
+      allow read: if isSignedIn() && (!isBlocked(userId) || isAdmin());
+      allow write: if isSignedIn() && (isOwner(userId) || isAdmin());
+    }
+
+    // Batch presence updates (for offline support)
+    match /status_updates/{batchId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
     }
 
     // Notifications
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && (
         resource.data.targetUserId == request.auth.uid ||
-        resource.data.userId == request.auth.uid
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
       );
       allow create: if isSignedIn() && (
         request.resource.data.userId == request.auth.uid ||
@@ -61,41 +90,47 @@ service cloud.firestore {
       );
       allow update: if isSignedIn() && (
         resource.data.targetUserId == request.auth.uid ||
-        resource.data.userId == request.auth.uid
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
       );
       allow delete: if isSignedIn() && (
         resource.data.targetUserId == request.auth.uid ||
-        resource.data.userId == request.auth.uid
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
       );
     }
 
     // Username reservations
     match /usernames/{username} {
-      allow read: if true;  // Allow reading usernames without authentication
+      allow read: if true;
       allow create, update: if isSignedIn() && 
         request.resource.data.uid == request.auth.uid &&
         isUsernameUnique(username);
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // User profiles
     match /users/{userId} {
-      allow read: if true;  // Allow reading user profiles without authentication for sign-in
+      allow read: if true;
       allow create: if isSignedIn() && isOwner(userId) && 
         isUsernameUnique(request.resource.data.username);
-      // Allow updates if:
-      // 1. User is updating their own profile
-      // 2. User is updating their own following list
-      // 3. User is updating someone else's followers list (for follow/unfollow)
       allow update: if isSignedIn() && (
         (isOwner(userId) && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['username']) ||
           isUsernameUnique(request.resource.data.username)
         )) || 
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['following'])) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers']))
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['following', 'followers', 'blockedUsers'])) ||
+        isAdmin()
       );
-      allow delete: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+    }
+
+    // User Reports
+    match /reports/{reportId} {
+      allow read: if isAdmin() || isModerator();
+      allow create: if isSignedIn();
+      allow update: if isAdmin() || isModerator();
+      allow delete: if isAdmin();
     }
 
     // Posts
@@ -103,52 +138,66 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         isOwner(resource.data.userId) || 
         isFollowing(resource.data.userId) || 
-        isPublicProfile(resource.data.userId)
+        isPublicProfile(resource.data.userId) ||
+        isAdmin()
       );
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
-      allow update: if isSignedIn() && isOwner(resource.data.userId);
-      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+      allow update: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
     }
 
     // Stories
     match /stories/{storyId} {
       allow read: if isSignedIn() && (
         isOwner(resource.data.userId) || 
-        isFollowing(resource.data.userId)
+        isFollowing(resource.data.userId) ||
+        isAdmin()
       );
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
-      allow update: if isSignedIn() && isOwner(resource.data.userId);
-      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+      allow update: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
     }
 
     // Chat rooms
     match /chatRooms/{roomId} {
-      allow read: if isSignedIn() && isChatParticipant(resource.data.participants);
-      allow create: if isSignedIn() && isChatParticipant(request.resource.data.participants);
-      allow update: if isSignedIn() && isChatParticipant(resource.data.participants);
-      allow delete: if false;
+      allow read: if isSignedIn() && (
+        isChatParticipant(resource.data.participants) && 
+        !isBlocked(resource.data.participants[0]) && 
+        !isBlocked(resource.data.participants[1]) ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && isChatParticipant(request.resource.data.participants) &&
+        !isBlocked(request.resource.data.participants[0]) && !isBlocked(request.resource.data.participants[1]);
+      allow update: if isSignedIn() && (isChatParticipant(resource.data.participants) || isAdmin());
+      allow delete: if isAdmin();
 
       // Chat messages
       match /messages/{messageId} {
-        allow read: if isSignedIn() && isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants);
+        allow read: if isSignedIn() && (
+          isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants) ||
+          isAdmin()
+        );
         allow create: if isSignedIn() && 
           isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants) &&
           request.resource.data.senderId == request.auth.uid;
-        allow update: if isSignedIn() && 
+        allow update: if isSignedIn() && (
           isChatParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participants) &&
-          (resource.data.senderId == request.auth.uid || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
-        allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+          (resource.data.senderId == request.auth.uid || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])) ||
+          isAdmin()
+        );
+        allow delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || isAdmin());
       }
     }
 
     // Comments
     match /posts/{postId}/comments/{commentId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow read: if isSignedIn() && (!isBlocked(resource.data.userId) || isAdmin());
+      allow create: if isSignedIn() && !isBlocked(get(/databases/$(database)/documents/posts/$(postId)).data.userId);
+      allow update: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
       allow delete: if isSignedIn() && (
         isOwner(resource.data.userId) || 
-        isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.userId)
+        isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.userId) ||
+        isAdmin()
       );
     }
   }

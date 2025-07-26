@@ -31,6 +31,7 @@ import {
   ChevronLeft as ChevronLeftIcon,
   AccountCircle,
   Logout,
+  LocalOffer as CouponsIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -65,6 +66,7 @@ const menuItems = [
   { text: 'Reports', icon: <ReportsIcon />, path: '/reports' },
   { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
   { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
+  { text: 'Coupons', icon: <CouponsIcon />, path: '/coupons' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
 

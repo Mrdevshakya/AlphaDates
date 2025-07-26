@@ -38,6 +38,8 @@ import { db } from '../config/firebase';
 import { UserProfile } from '../../src/types';
 import { createNotification } from '../utils/notifications';
 import usePresence from '../hooks/usePresence';
+import SubscriptionPlans from '../components/SubscriptionPlans';
+import { createTestSubscription } from '../utils/testSubscription';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 30;
@@ -57,7 +59,14 @@ interface MatchedUser extends UserProfile {
 }
 
 export default function MatchesScreen() {
-  const { user } = useAuth();
+  const { user, hasActiveSubscription, refreshSubscription } = useAuth();
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+
+  // Debug subscription status
+  useEffect(() => {
+    console.log('🎯 Matches Screen - User:', user?.uid);
+    console.log('🎯 Matches Screen - Has Active Subscription:', hasActiveSubscription);
+  }, [user, hasActiveSubscription]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [potentialMatches, setPotentialMatches] = useState<UserProfile[]>([]);
@@ -113,6 +122,12 @@ export default function MatchesScreen() {
 
   const handleSwipe = async (isLike: boolean) => {
     if (!user || currentIndex >= potentialMatches.length) return;
+
+    // Check if user has active subscription
+    if (!hasActiveSubscription) {
+      setShowSubscriptionModal(true);
+      return;
+    }
 
     const targetUser = potentialMatches[currentIndex];
     
@@ -358,12 +373,9 @@ export default function MatchesScreen() {
       } else {
         return (
           <View style={[styles.cardBackground, { backgroundColor: '#f0f0f0' }]}>
-            <SvgUri
-              width="100%"
-              height="100%"
-              uri={require('../../assets/images/default-avatar.svg')}
-              style={styles.defaultAvatar}
-            />
+            <View style={styles.defaultAvatar}>
+              <MaterialCommunityIcons name="account" size={100} color="#999" />
+            </View>
             {renderContent()}
           </View>
         );
@@ -552,6 +564,52 @@ export default function MatchesScreen() {
     );
   };
 
+  const renderSubscriptionRequired = () => (
+    <View style={styles.subscriptionRequiredContainer}>
+      <MaterialCommunityIcons name="crown" size={80} color="#FFD700" />
+      <Text style={styles.subscriptionRequiredTitle}>🔒 Premium Feature</Text>
+      <Text style={styles.subscriptionRequiredText}>
+        Matches feature requires an active subscription to use. Without subscription, you cannot swipe or view potential matches.
+      </Text>
+      <View style={styles.subscriptionStatusBadge}>
+        <Text style={styles.subscriptionStatusText}>❌ No Active Subscription</Text>
+      </View>
+      
+      {/* Test Button for Development */}
+      {__DEV__ && (
+        <TouchableOpacity
+          style={[styles.subscribeButton, { marginBottom: 10, backgroundColor: '#4CAF50' }]}
+          onPress={async () => {
+            if (user) {
+              try {
+                await createTestSubscription(user.uid);
+                Alert.alert('Test Subscription Created', 'A test subscription has been created. The app will refresh subscription status.');
+                // Refresh subscription status
+                await refreshSubscription();
+              } catch (error) {
+                Alert.alert('Error', 'Failed to create test subscription');
+              }
+            }
+          }}
+        >
+          <Text style={styles.subscribeButtonText}>Create Test Subscription (Dev Only)</Text>
+        </TouchableOpacity>
+      )}
+      
+      <TouchableOpacity
+        style={styles.subscribeButton}
+        onPress={() => setShowSubscriptionModal(true)}
+      >
+        <LinearGradient
+          colors={['#FF4B6A', '#FF6B8A']}
+          style={styles.subscribeButtonGradient}
+        >
+          <Text style={styles.subscribeButtonText}>Get Premium</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -581,17 +639,38 @@ export default function MatchesScreen() {
           <ActivityIndicator size="large" color="#FF4B6A" />
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
-      ) : activeTab === 'discover' ? (
-        <View style={styles.cardsContainer}>
-          {currentIndex < potentialMatches.length ? (
-            renderMatchCard(potentialMatches[currentIndex])
-          ) : (
-            renderEmptyState()
-          )}
-        </View>
+      ) : !hasActiveSubscription ? (
+        <>
+          {console.log('🚫 RENDERING SUBSCRIPTION REQUIRED SCREEN - hasActiveSubscription:', hasActiveSubscription)}
+          {renderSubscriptionRequired()}
+        </>
       ) : (
-        renderMatchedUsers()
+        <>
+          {console.log('✅ USER HAS SUBSCRIPTION - SHOWING MATCHES - hasActiveSubscription:', hasActiveSubscription)}
+          {activeTab === 'discover' ? (
+            <View style={styles.cardsContainer}>
+              {currentIndex < potentialMatches.length ? (
+                renderMatchCard(potentialMatches[currentIndex])
+              ) : (
+                renderEmptyState()
+              )}
+            </View>
+          ) : (
+            renderMatchedUsers()
+          )}
+        </>
       )}
+
+      {/* Subscription Modal */}
+      <SubscriptionPlans
+        userId={user?.uid || ''}
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSubscriptionSuccess={() => {
+          // Refresh subscription status
+          // This will be handled by the AuthContext
+        }}
+      />
     </View>
   );
 }
@@ -912,5 +991,54 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subscriptionRequiredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 30,
+  },
+  subscriptionRequiredTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  subscriptionRequiredText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 30,
+  },
+  subscribeButton: {
+    borderRadius: 25,
+    overflow: 'hidden',
+  },
+  subscribeButtonGradient: {
+    paddingHorizontal: 40,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  subscribeButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  subscriptionStatusBadge: {
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  subscriptionStatusText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

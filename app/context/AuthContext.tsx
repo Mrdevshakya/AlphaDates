@@ -21,7 +21,8 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
-import { UserProfile, UserUpdateData } from '../../src/types';
+import { UserProfile, UserUpdateData, UserSubscription } from '../../src/types';
+import { SubscriptionService } from '../utils/subscription';
 import { getUnreadMessagesCount } from '../utils/chat';
 import { getUnreadNotificationsCount, subscribeToNotifications, NotificationWithUser } from '../utils/notifications';
 import presence from '../utils/presence';
@@ -33,6 +34,8 @@ interface AuthContextType {
   unreadMessagesCount: number;
   unreadNotificationsCount: number;
   notifications: NotificationWithUser[];
+  subscription: UserSubscription | null;
+  hasActiveSubscription: boolean;
   setUserData: (userData: UserProfile | null) => void;
   loading: boolean;
   isFirstTime: boolean;
@@ -43,6 +46,7 @@ interface AuthContextType {
   updateUserProfile: (data: UserUpdateData) => Promise<void>;
   refreshUnreadCount: () => Promise<void>;
   refreshNotifications: () => Promise<void>;
+  refreshSubscription: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -57,6 +61,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationWithUser[]>([]);
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
 
   // Fetch user data from Firestore
   const fetchUserData = async (uid: string) => {
@@ -92,6 +98,24 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Fetch subscription status
+  const refreshSubscription = async () => {
+    if (!user) return;
+    try {
+      console.log('🔍 Checking subscription for user:', user.uid);
+      const userSubscription = await SubscriptionService.getUserSubscription(user.uid);
+      const isActive = await SubscriptionService.hasActiveSubscription(user.uid);
+      console.log('📊 Subscription data:', userSubscription);
+      console.log('✅ Has active subscription:', isActive);
+      setSubscription(userSubscription);
+      setHasActiveSubscription(isActive);
+    } catch (error) {
+      console.error('❌ Error fetching subscription:', error);
+      // For now, set to false to show subscription requirement
+      setHasActiveSubscription(false);
+    }
+  };
+
   useEffect(() => {
     // Check if it's first launch
     AsyncStorage.getItem('hasLaunched')
@@ -115,11 +139,14 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         await fetchUserData(user.uid);
         await refreshUnreadCount();
         await refreshNotifications();
+        await refreshSubscription();
       } else {
         setUserData(null);
         setUnreadMessagesCount(0);
         setUnreadNotificationsCount(0);
         setNotifications([]);
+        setSubscription(null);
+        setHasActiveSubscription(false);
       }
       setLoading(false);
     });
@@ -367,6 +394,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       unreadMessagesCount,
       unreadNotificationsCount,
       notifications,
+      subscription,
+      hasActiveSubscription,
       setUserData,
       loading,
       isFirstTime,
@@ -376,7 +405,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       updateUserProfile,
       refreshUnreadCount,
-      refreshNotifications
+      refreshNotifications,
+      refreshSubscription
     }}>
       {children}
     </AuthContext.Provider>
