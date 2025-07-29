@@ -46,7 +46,7 @@ export interface UserProfile {
   profilePicture: string;
   mobileNumber?: string;
   bio?: string;
-  location?: string;
+  location?: string | { _lat: number; _long: number };
   age?: number;
   followers: string[];
   following: string[];

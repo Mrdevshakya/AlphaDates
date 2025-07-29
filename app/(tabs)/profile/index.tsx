@@ -447,7 +447,14 @@ export default function ProfileScreen() {
               {displayData.location && (
                 <View style={styles.locationContainer}>
                   <Ionicons name="location" size={16} color="white" />
-                  <Text style={styles.location}>{displayData.location}</Text>
+                  <Text style={styles.location}>
+                    {typeof displayData.location === 'string'
+                      ? displayData.location
+                      : typeof displayData.location === 'object' && displayData.location._lat && displayData.location._long
+                        ? `${displayData.location._lat.toFixed(4)}, ${displayData.location._long.toFixed(4)}`
+                        : 'Location available'
+                    }
+                  </Text>
                 </View>
               )}
             </View>
