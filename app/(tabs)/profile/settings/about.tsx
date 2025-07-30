@@ -24,16 +24,16 @@ export default function AboutScreen() {
   const handleLinkPress = (type: string) => {
     switch (type) {
       case 'privacy':
-        Linking.openURL('https://afnny.com/privacy');
+        Linking.openURL('https://alphadate.com/privacy');
         break;
       case 'terms':
-        Linking.openURL('https://afnny.com/terms');
+        Linking.openURL('https://alphadate.com/terms');
         break;
       case 'licenses':
         Alert.alert('Coming Soon', 'Open source licenses will be available soon!');
         break;
       case 'website':
-        Linking.openURL('https://afnny.com');
+        Linking.openURL('https://alphadate.com');
         break;
     }
   };
@@ -74,10 +74,10 @@ export default function AboutScreen() {
         <BlurView intensity={10} tint="dark" style={styles.section}>
           <View style={styles.appInfo}>
             <Ionicons name="heart" size={48} color="#FF4B6A" />
-            <Text style={styles.appName}>AFNNY</Text>
+            <Text style={styles.appName}>AlphaDate</Text>
             <Text style={styles.appVersion}>Version {APP_VERSION}</Text>
             <Text style={styles.appDescription}>
-              Find your perfect match with AFNNY - where meaningful connections happen.
+              Find your perfect match with AlphaDate - where meaningful connections happen.
             </Text>
           </View>
         </BlurView>
@@ -122,7 +122,7 @@ export default function AboutScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.copyright}>
-            © {new Date().getFullYear()} AFNNY. All rights reserved.
+            © {new Date().getFullYear()} AlphaDate. All rights reserved.
           </Text>
         </View>
       </ScrollView>

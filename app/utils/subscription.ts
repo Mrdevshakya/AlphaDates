@@ -50,15 +50,6 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   }
 ];
 
-// Cashfree Configuration
-const CASHFREE_CONFIG = {
-  appId: process.env.EXPO_PUBLIC_CASHFREE_APP_ID || 'your_cashfree_app_id',
-  secretKey: process.env.EXPO_PUBLIC_CASHFREE_SECRET_KEY || 'your_cashfree_secret_key',
-  environment: __DEV__ ? 'TEST' : 'PROD', // TEST for development, PROD for production
-  baseUrl: __DEV__ 
-    ? 'https://sandbox.cashfree.com/pg' 
-    : 'https://api.cashfree.com/pg'
-};
 
 export class SubscriptionService {
   
@@ -94,7 +85,20 @@ export class SubscriptionService {
           ...doc.data()
         } as UserSubscription))
         .filter(sub => sub.status === 'active')
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort((a, b) => {
+          // Handle Firestore timestamp conversion for sorting
+          const getTime = (date: any) => {
+            if (date && typeof date === 'object' && 'seconds' in date) {
+              return date.seconds * 1000;
+            } else if (date instanceof Date) {
+              return date.getTime();
+            } else if (typeof date === 'string') {
+              return new Date(date).getTime();
+            }
+            return 0;
+          };
+          return getTime(b.createdAt) - getTime(a.createdAt);
+        });
       
       if (activeSubscriptions.length === 0) {
         console.log('❌ SubscriptionService: No active subscriptions found');
@@ -113,26 +117,44 @@ export class SubscriptionService {
   // Check if user has active subscription
   static async hasActiveSubscription(userId: string): Promise<boolean> {
     try {
-      console.log('🔍 SubscriptionService: Checking active subscription for user:', userId);
+      console.log('🔍 SubscriptionService: hasActiveSubscription called for user:', userId);
       const subscription = await this.getUserSubscription(userId);
       if (!subscription) {
-        console.log('❌ SubscriptionService: No subscription found, returning false');
+        console.log('❌ SubscriptionService: No subscription found in hasActiveSubscription, returning false');
         return false;
       }
       
       const now = new Date();
-      const endDate = new Date(subscription.endDate);
+      console.log('📅 SubscriptionService: Current timestamp (now):', now.getTime(), 'Date:', now.toISOString());
       
-      console.log('📅 SubscriptionService: Current date:', now);
-      console.log('📅 SubscriptionService: Subscription end date:', endDate);
+      // Handle Firestore timestamp conversion
+      let endDate: Date;
+      if (subscription.endDate && typeof subscription.endDate === 'object' && 'seconds' in subscription.endDate) {
+        // Firestore timestamp format
+        const timestamp = subscription.endDate as any;
+        endDate = new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+        console.log('📅 SubscriptionService: Converted Firestore timestamp - seconds:', timestamp.seconds, 'nanoseconds:', timestamp.nanoseconds);
+      } else if (subscription.endDate instanceof Date) {
+        endDate = subscription.endDate;
+        console.log('📅 SubscriptionService: Using Date object directly');
+      } else if (typeof subscription.endDate === 'string') {
+        endDate = new Date(subscription.endDate);
+        console.log('📅 SubscriptionService: Converted string to Date');
+      } else {
+        console.error('❌ SubscriptionService: Invalid endDate format:', subscription.endDate);
+        return false;
+      }
+      
+      console.log('📅 SubscriptionService: Subscription end timestamp:', endDate.getTime(), 'Date:', endDate.toISOString());
       console.log('📊 SubscriptionService: Subscription status:', subscription.status);
+      console.log('⏰ SubscriptionService: Time comparison - now < endDate:', now.getTime() < endDate.getTime());
       
       const isActive = subscription.status === 'active' && endDate > now;
-      console.log('✅ SubscriptionService: Is active subscription:', isActive);
+      console.log('✅ SubscriptionService: Final hasActiveSubscription result:', isActive);
       
       return isActive;
     } catch (error) {
-      console.error('❌ SubscriptionService: Error checking subscription status:', error);
+      console.error('❌ SubscriptionService: Error in hasActiveSubscription:', error);
       return false;
     }
   }
@@ -157,22 +179,10 @@ export class SubscriptionService {
       };
 
       const orderRef = await addDoc(collection(db, 'paymentOrders'), orderData);
-      
-      // Create Cashfree order
-      const cashfreeOrder = await this.createCashfreeOrder(orderRef.id, plan.price, userId);
-      
-      // Update order with Cashfree details
-      await updateDoc(orderRef, {
-        cashfreeOrderId: cashfreeOrder.order_id,
-        paymentSessionId: cashfreeOrder.payment_session_id,
-        updatedAt: serverTimestamp()
-      });
 
       return {
         id: orderRef.id,
         ...orderData,
-        cashfreeOrderId: cashfreeOrder.order_id,
-        paymentSessionId: cashfreeOrder.payment_session_id,
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -182,45 +192,6 @@ export class SubscriptionService {
     }
   }
 
-  // Create Cashfree order
-  private static async createCashfreeOrder(orderId: string, amount: number, userId: string) {
-    try {
-      const orderData = {
-        order_id: orderId,
-        order_amount: amount,
-        order_currency: 'INR',
-        customer_details: {
-          customer_id: userId,
-          customer_phone: '9999999999', // You should get this from user profile
-          customer_email: 'user@example.com' // You should get this from user profile
-        },
-        order_meta: {
-          return_url: 'https://your-app.com/payment/return',
-          notify_url: 'https://your-app.com/payment/webhook'
-        }
-      };
-
-      const response = await fetch(`${CASHFREE_CONFIG.baseUrl}/orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-version': '2022-09-01',
-          'x-client-id': CASHFREE_CONFIG.appId,
-          'x-client-secret': CASHFREE_CONFIG.secretKey
-        },
-        body: JSON.stringify(orderData)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Cashfree API error: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error creating Cashfree order:', error);
-      throw error;
-    }
-  }
 
   // Process successful payment
   static async processSuccessfulPayment(orderId: string, paymentId: string): Promise<void> {
@@ -329,20 +300,24 @@ export class SubscriptionService {
         throw new Error('Invalid subscription plan');
       }
 
-      // Create order in Firestore
-      const enhancedOrderData = {
+      // Create order in Firestore - handle undefined values
+      const enhancedOrderData: any = {
         userId: orderData.userId,
         planId: orderData.planId,
         amount: orderData.amount,
         originalAmount: orderData.originalAmount,
         discountAmount: orderData.discountAmount,
-        couponCode: orderData.couponCode,
         upiId: orderData.upiId,
         currency: 'INR',
         status: 'created' as const,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
+
+      // Only add couponCode if it's not undefined
+      if (orderData.couponCode) {
+        enhancedOrderData.couponCode = orderData.couponCode;
+      }
 
       const orderRef = await addDoc(collection(db, 'paymentOrders'), enhancedOrderData);
       

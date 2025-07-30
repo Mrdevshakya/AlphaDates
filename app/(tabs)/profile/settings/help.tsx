@@ -69,7 +69,7 @@ export default function HelpScreen() {
             'Email Support',
             'Send us an email, we\'ll respond within 24 hours',
             () => {
-              Linking.openURL('mailto:support@afnny.com');
+              Linking.openURL('mailto:support@alphadate.com');
             }
           )}
           {renderHelpItem(
@@ -77,7 +77,7 @@ export default function HelpScreen() {
             'Help Articles',
             'Browse our help articles and guides',
             () => {
-              Linking.openURL('https://help.afnny.com');
+              Linking.openURL('https://help.alphadate.com');
             }
           )}
         </BlurView>
@@ -89,7 +89,7 @@ export default function HelpScreen() {
             'Safety & Privacy',
             'Learn about our safety features and guidelines',
             () => {
-              Linking.openURL('https://help.afnny.com/safety');
+              Linking.openURL('https://help.alphadate.com/safety');
             }
           )}
           {renderHelpItem(
@@ -105,7 +105,7 @@ export default function HelpScreen() {
             'Account & Billing',
             'Get help with your account or payments',
             () => {
-              Linking.openURL('https://help.afnny.com/account');
+              Linking.openURL('https://help.alphadate.com/account');
             }
           )}
         </BlurView>
@@ -117,7 +117,7 @@ export default function HelpScreen() {
             'Community Guidelines',
             'Read our community rules and standards',
             () => {
-              Linking.openURL('https://afnny.com/guidelines');
+              Linking.openURL('https://alphadate.com/guidelines');
             }
           )}
           {renderHelpItem(
@@ -125,7 +125,7 @@ export default function HelpScreen() {
             'Blog & Updates',
             'Stay updated with latest news and features',
             () => {
-              Linking.openURL('https://blog.afnny.com');
+              Linking.openURL('https://blog.alphadate.com');
             }
           )}
           {renderHelpItem(
@@ -133,7 +133,7 @@ export default function HelpScreen() {
             'Success Stories',
             'Read stories from our community',
             () => {
-              Linking.openURL('https://afnny.com/stories');
+              Linking.openURL('https://alphadate.com/stories');
             }
           )}
         </BlurView>

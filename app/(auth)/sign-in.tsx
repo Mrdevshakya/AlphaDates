@@ -65,7 +65,7 @@ const SignInScreen = () => {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerContainer}>
-          <Text style={styles.logoText}>AFNNY</Text>
+          <Text style={styles.logoText}>AlphaDate</Text>
           <Text style={styles.welcomeText}>Welcome Back!</Text>
           <Text style={styles.subtitleText}>Your perfect match is waiting</Text>
         </View>

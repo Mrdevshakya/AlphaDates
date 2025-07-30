@@ -8,9 +8,10 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  Dimensions
+  Dimensions,
+  Animated
 } from 'react-native';
-import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SubscriptionService } from '../utils/subscription';
 import { SubscriptionPlan, UserSubscription } from '../../src/types';
@@ -25,11 +26,11 @@ interface SubscriptionPlansProps {
   onSubscriptionSuccess: () => void;
 }
 
-export default function SubscriptionPlans({ 
-  userId, 
-  visible, 
-  onClose, 
-  onSubscriptionSuccess 
+export default function SubscriptionPlans({
+  userId,
+  visible,
+  onClose,
+  onSubscriptionSuccess
 }: SubscriptionPlansProps) {
   const [plans] = useState<SubscriptionPlan[]>(SubscriptionService.getSubscriptionPlans());
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
@@ -37,9 +38,48 @@ export default function SubscriptionPlans({
   const [loading, setLoading] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
 
+  // Animation values
+  const slideAnim = useState(new Animated.Value(width))[0];
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const planAnimations = useState(
+    plans.map(() => new Animated.Value(0))
+  )[0];
+
+  // Animation effects
   useEffect(() => {
     if (visible) {
+      // Animate in
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Stagger plan animations
+      const planStaggerAnimations = planAnimations.map((anim, index) =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 300,
+          delay: index * 100,
+          useNativeDriver: true,
+        })
+      );
+      
+      Animated.stagger(100, planStaggerAnimations).start();
+      
       loadCurrentSubscription();
+    } else {
+      // Reset animations
+      slideAnim.setValue(width);
+      fadeAnim.setValue(0);
+      planAnimations.forEach(anim => anim.setValue(0));
     }
   }, [visible]);
 
@@ -60,9 +100,13 @@ export default function SubscriptionPlans({
     setShowPayment(true);
   };
 
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = async () => {
     setShowPayment(false);
     setSelectedPlan(null);
+    
+    // Reload current subscription to reflect the new subscription
+    await loadCurrentSubscription();
+    
     onSubscriptionSuccess();
     onClose();
   };
@@ -72,21 +116,42 @@ export default function SubscriptionPlans({
     setShowPayment(false);
   };
 
-  const renderPlanCard = (plan: SubscriptionPlan) => {
+  const renderPlanCard = (plan: SubscriptionPlan, index: number) => {
     const isCurrentPlan = currentSubscription?.planId === plan.id;
     const monthlyPrice = Math.round(plan.price / plan.duration);
 
     return (
-      <TouchableOpacity
+      <Animated.View
         key={plan.id}
         style={[
-          styles.planCard,
-          plan.isPopular && styles.popularPlan,
-          isCurrentPlan && styles.currentPlan
+          {
+            opacity: planAnimations[index],
+            transform: [
+              {
+                translateY: planAnimations[index].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [50, 0],
+                }),
+              },
+              {
+                scale: planAnimations[index].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.9, 1],
+                }),
+              },
+            ],
+          },
         ]}
-        onPress={() => !isCurrentPlan && handlePlanSelect(plan)}
-        disabled={isCurrentPlan}
       >
+        <TouchableOpacity
+          style={[
+            styles.planCard,
+            plan.isPopular && styles.popularPlan,
+            isCurrentPlan && styles.currentPlan
+          ]}
+          onPress={() => !isCurrentPlan && handlePlanSelect(plan)}
+          disabled={isCurrentPlan}
+        >
         {plan.isPopular && (
           <View style={styles.popularBadge}>
             <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
@@ -122,7 +187,8 @@ export default function SubscriptionPlans({
             <Text style={styles.selectButtonText}>Choose Plan</Text>
           </LinearGradient>
         )}
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </Animated.View>
     );
   };
 
@@ -187,7 +253,7 @@ export default function SubscriptionPlans({
               {renderCurrentSubscription()}
               
               <View style={styles.plansContainer}>
-                {plans.map(renderPlanCard)}
+                {plans.map((plan, index) => renderPlanCard(plan, index))}
               </View>
             </>
           )}

@@ -1,8 +1,8 @@
 import { ExpoConfig } from 'expo/config';
 
 const config: ExpoConfig = {
-  name: 'Amity Missmatch',
-  slug: 'amity-missmatch',
+  name: 'AlphaDate',
+  slug: 'alphadate-app',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/images/logo.svg',
@@ -17,14 +17,14 @@ const config: ExpoConfig = {
   ],
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.amity.missmatch'
+    bundleIdentifier: 'com.alphadate.app'
   },
   android: {
     adaptiveIcon: {
       foregroundImage: './assets/images/logo.svg',
       backgroundColor: '#ffffff'
     },
-    package: 'com.amity.missmatch'
+    package: 'com.alphadate.app'
   },
   web: {
     favicon: './assets/images/logo.svg'
@@ -52,7 +52,7 @@ const config: ExpoConfig = {
       }
     ]
   ],
-  scheme: 'amity-missmatch',
+  scheme: 'alphadate-app',
   extra: {
     router: {
       origin: false

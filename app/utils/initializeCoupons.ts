@@ -43,3 +43,9 @@ export const testCouponValidation = async () => {
     return false;
   }
 };
+
+// Default export to satisfy React Native routing requirements
+export default {
+  initializeDefaultCoupons,
+  testCouponValidation
+};

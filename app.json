@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "afnny-missmatch",
-    "slug": "afnny-missmatch",
+    "name": "AlphaDate",
+    "slug": "alphadate-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -33,6 +33,6 @@
     "plugins": [
       "expo-router"
     ],
-    "scheme": "afnny-missmatch"
+    "scheme": "alphadate-app"
   }
 }

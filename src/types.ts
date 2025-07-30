@@ -147,8 +147,6 @@ export interface PaymentOrder {
   amount: number;
   currency: string;
   status: 'created' | 'paid' | 'failed' | 'cancelled';
-  cashfreeOrderId?: string;
-  paymentSessionId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

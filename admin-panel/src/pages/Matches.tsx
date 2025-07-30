@@ -8,6 +8,17 @@ import {
   IconButton,
   Chip,
   Stack,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Autocomplete,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import {
   DataGrid,
@@ -17,8 +28,9 @@ import {
 import {
   Delete as DeleteIcon,
   Visibility as VisibilityIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
-import { collection, query, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 interface Match {
@@ -40,6 +52,10 @@ export default function Matches() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [createMatchOpen, setCreateMatchOpen] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<any[]>([]);
+  const [creating, setCreating] = useState(false);
 
   const columns: GridColDef[] = [
     {
@@ -137,6 +153,7 @@ export default function Matches() {
 
   useEffect(() => {
     fetchMatches();
+    fetchUsers();
   }, []);
 
   const fetchMatches = async () => {
@@ -187,6 +204,55 @@ export default function Matches() {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+      
+      const usersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      setError('Failed to fetch users');
+    }
+  };
+
+  const handleCreateMatch = async () => {
+    if (selectedUsers.length !== 2) {
+      setError('Please select exactly 2 users to create a match');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      // Create match in the regular 'matches' collection instead of 'adminMatches'
+      // This way it will appear as a normal match to users
+      await addDoc(collection(db, 'matches'), {
+        users: [selectedUsers[0].id, selectedUsers[1].id],
+        createdAt: serverTimestamp(),
+        lastInteraction: serverTimestamp(),
+        isMatched: true, // Admin matches are automatically matched
+        status: 'active',
+        compatibility: 95, // Default high compatibility for admin matches
+        source: 'admin' // Internal tracking only
+      });
+
+      setCreateMatchOpen(false);
+      setSelectedUsers([]);
+      fetchMatches(); // Refresh the matches list
+      setError('');
+    } catch (error) {
+      console.error('Error creating match:', error);
+      setError('Failed to create match');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const handleViewMatch = (match: Match) => {
     // Implement match details view
     console.log('View match:', match);
@@ -204,9 +270,19 @@ export default function Matches() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 4 }}>
-        Matches
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Typography variant="h4">
+          Matches
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setCreateMatchOpen(true)}
+          sx={{ backgroundColor: '#FF4B6A', '&:hover': { backgroundColor: '#FF6B8A' } }}
+        >
+          Create Match
+        </Button>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

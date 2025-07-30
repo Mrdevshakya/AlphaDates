@@ -100,18 +100,26 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Fetch subscription status
   const refreshSubscription = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('❌ AuthContext: No user found in refreshSubscription');
+      return;
+    }
     try {
-      console.log('🔍 Checking subscription for user:', user.uid);
+      console.log('🔍 AuthContext: Checking subscription for user:', user.uid);
       const userSubscription = await SubscriptionService.getUserSubscription(user.uid);
+      console.log('📊 AuthContext: Subscription data received:', userSubscription);
+      
       const isActive = await SubscriptionService.hasActiveSubscription(user.uid);
-      console.log('📊 Subscription data:', userSubscription);
-      console.log('✅ Has active subscription:', isActive);
+      console.log('✅ AuthContext: Has active subscription result:', isActive);
+      
+      console.log('🔄 AuthContext: Setting subscription state - subscription:', !!userSubscription, 'isActive:', isActive);
       setSubscription(userSubscription);
       setHasActiveSubscription(isActive);
+      
+      console.log('✅ AuthContext: Subscription state updated successfully');
     } catch (error) {
-      console.error('❌ Error fetching subscription:', error);
-      // For now, set to false to show subscription requirement
+      console.error('❌ AuthContext: Error fetching subscription:', error);
+      console.log('🔄 AuthContext: Setting hasActiveSubscription to false due to error');
       setHasActiveSubscription(false);
     }
   };

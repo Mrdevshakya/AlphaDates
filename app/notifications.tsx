@@ -13,8 +13,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './context/AuthContext';
 import { router } from 'expo-router';
-import { markNotificationAsRead, markAllNotificationsAsRead, NotificationWithUser, NotificationType } from './utils/notifications';
+import { markNotificationAsRead, markAllNotificationsAsRead, NotificationWithUser, NotificationType, createNotification } from './utils/notifications';
 import { formatDistanceToNow } from 'date-fns';
+import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { db } from './config/firebase';
 
 // Filter types
 const FILTERS = [
@@ -67,8 +69,10 @@ export default function NotificationsScreen() {
         case 'like':
         case 'comment':
           if (notification.notification.contentId) {
-            // Navigate to post or video
-            if (notification.notification.contentType === 'post') {
+            // Navigate to story if it's a story, otherwise to post
+            if (notification.notification.contentType === 'story') {
+              router.push(`/stories/${notification.notification.contentId}`);
+            } else if (notification.notification.contentType === 'post') {
               router.push(`/post/${notification.notification.contentId}`);
             } else if (notification.notification.contentType === 'video') {
               router.push(`/video/${notification.notification.contentId}`);
@@ -77,15 +81,15 @@ export default function NotificationsScreen() {
           break;
         case 'follow':
           // Navigate to user profile
-          router.push(`/profile/${notification.user.id}`);
+          router.push(`/(tabs)/profile/${notification.user.id}`);
           break;
         case 'match':
           // Navigate to matches screen
-          router.push('/matches');
+          router.push('/(tabs)/matches');
           break;
         case 'suggestion':
           // Navigate to user profile
-          router.push(`/profile/${notification.user.id}`);
+          router.push(`/(tabs)/profile/${notification.user.id}`);
           break;
       }
 
@@ -96,8 +100,47 @@ export default function NotificationsScreen() {
     }
   };
 
-  const filteredNotifications = activeFilter === 'all' 
-    ? notifications 
+  const handleFollowBack = async (targetUserId: string, isFollowBack: boolean) => {
+    if (!user) return;
+
+    try {
+      // Get current user document
+      const currentUserRef = doc(db, 'users', user.uid);
+      const currentUserDoc = await getDoc(currentUserRef);
+      
+      if (!currentUserDoc.exists()) return;
+      
+      const currentUserData = currentUserDoc.data();
+      const isAlreadyFollowing = currentUserData.following?.includes(targetUserId);
+      
+      if (isAlreadyFollowing) return; // Already following
+
+      // Update current user's following list
+      await updateDoc(currentUserRef, {
+        following: arrayUnion(targetUserId)
+      });
+
+      // Update target user's followers list
+      const targetUserRef = doc(db, 'users', targetUserId);
+      await updateDoc(targetUserRef, {
+        followers: arrayUnion(user.uid)
+      });
+
+      // Create follow notification for target user
+      await createNotification('follow', user.uid, targetUserId);
+
+      // Show success message
+      console.log(isFollowBack ? 'Followed back successfully!' : 'Followed successfully!');
+      
+      // Refresh notifications to update the UI
+      await refreshNotifications();
+    } catch (error) {
+      console.error('Error following user:', error);
+    }
+  };
+
+  const filteredNotifications = activeFilter === 'all'
+    ? notifications
     : notifications.filter(item => item.notification.type === activeFilter as NotificationType);
 
   const formatTimeAgo = (date: Date) => {
@@ -134,13 +177,21 @@ export default function NotificationsScreen() {
     const getNotificationContent = () => {
       switch (item.notification.type) {
         case 'like':
-          return item.notification.contentType === 'video' 
-            ? 'liked your video' 
-            : 'liked your post';
+          if (item.notification.contentType === 'video') {
+            return 'liked your video';
+          } else if (item.notification.contentType === 'story') {
+            return 'liked your story';
+          } else {
+            return 'liked your post';
+          }
         case 'follow':
           return 'started following you';
         case 'comment':
-          return `commented: ${item.notification.message || ''}`;
+          if (item.notification.contentType === 'story') {
+            return `commented on your story: ${item.notification.message || ''}`;
+          } else {
+            return `commented: ${item.notification.message || ''}`;
+          }
         case 'match':
           return 'is a new match!';
         case 'suggestion':
@@ -175,9 +226,9 @@ export default function NotificationsScreen() {
             <Image source={{ uri: item.postImage }} style={styles.postImage} />
           )}
           {item.notification.type === 'follow' || item.notification.type === 'suggestion' ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => router.push(`/profile/${item.user.id}`)}
+              onPress={() => handleFollowBack(item.user.id, item.notification.type === 'follow')}
             >
               <Text style={styles.actionButtonText}>
                 {item.notification.type === 'follow' ? 'Follow Back' : 'Follow'}

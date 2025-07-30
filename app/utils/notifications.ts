@@ -9,8 +9,8 @@ export interface Notification {
   type: NotificationType;
   userId: string; // ID of the user who triggered the notification
   targetUserId: string; // ID of the user who receives the notification
-  contentId?: string; // ID of the post/video/comment
-  contentType?: 'post' | 'video' | 'comment';
+  contentId?: string; // ID of the post/video/comment/story
+  contentType?: 'post' | 'video' | 'comment' | 'story';
   message?: string;
   read: boolean;
   createdAt: Date;
@@ -65,10 +65,18 @@ export const subscribeToNotifications = (
       let postImage;
       if (notification.contentId && (notification.type === 'like' || notification.type === 'comment')) {
         try {
-          const contentRef = doc(db, notification.contentType === 'video' ? 'videos' : 'posts', notification.contentId);
+          let contentRef;
+          if (notification.contentType === 'story') {
+            contentRef = doc(db, 'stories', notification.contentId);
+          } else if (notification.contentType === 'video') {
+            contentRef = doc(db, 'videos', notification.contentId);
+          } else {
+            contentRef = doc(db, 'posts', notification.contentId);
+          }
+          
           const contentDoc = await getDoc(contentRef);
           const contentData = contentDoc.data() as DocumentData || {};
-          postImage = contentData.imageUrl || contentData.thumbnailUrl;
+          postImage = contentData.imageUrl || contentData.thumbnailUrl || contentData.mediaUrl;
         } catch (error) {
           console.error('Error fetching content image:', error);
         }

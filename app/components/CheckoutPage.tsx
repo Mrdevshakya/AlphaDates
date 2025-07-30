@@ -9,12 +9,19 @@ import {
   ScrollView,
   ActivityIndicator,
   Modal,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { SubscriptionPlan, CheckoutData, CouponCode } from '../../src/types';
 import couponService from '../utils/couponService';
 import { SubscriptionService } from '../utils/subscription';
+import RazorpayService from '../utils/razorpayService';
+import { useAuth } from '../context/AuthContext';
+
+const { width, height } = Dimensions.get('window');
 
 interface CheckoutPageProps {
   visible: boolean;
@@ -43,6 +50,43 @@ export default function CheckoutPage({
   const [loading, setLoading] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+
+  // Animation values
+  const slideAnim = useState(new Animated.Value(height))[0];
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const scaleAnim = useState(new Animated.Value(0.9))[0];
+  const couponSuccessAnim = useState(new Animated.Value(0))[0];
+
+  // Animation effects
+  useEffect(() => {
+    if (visible) {
+      // Animate in
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Reset animations
+      slideAnim.setValue(height);
+      fadeAnim.setValue(0);
+      scaleAnim.setValue(0.9);
+      couponSuccessAnim.setValue(0);
+    }
+  }, [visible]);
 
   useEffect(() => {
     // Reset checkout data when plan changes
@@ -81,6 +125,25 @@ export default function CheckoutPage({
           finalAmount: selectedPlan.price - discountAmount,
           couponCode: result.coupon.code,
         });
+
+        // Animate coupon success
+        Animated.sequence([
+          Animated.timing(couponSuccessAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(couponSuccessAnim, {
+            toValue: 0.8,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(couponSuccessAnim, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+        ]).start();
 
         Alert.alert(
           'Coupon Applied! 🎉',
@@ -129,7 +192,7 @@ export default function CheckoutPage({
 
     setPaymentProcessing(true);
     try {
-      console.log('💳 Processing payment for checkout:', checkoutData);
+      console.log('💳 Processing Razorpay payment for checkout:', checkoutData);
       
       // Create enhanced payment order
       const orderData = {
@@ -157,25 +220,34 @@ export default function CheckoutPage({
         console.log('🎫 Coupon applied to order');
       }
 
-      // Simulate UPI payment process
-      Alert.alert(
-        'Payment Initiated 💳',
-        `Payment request sent to ${upiId}\nAmount: ₹${checkoutData.finalAmount}\n\nPlease complete the payment in your UPI app.`,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-            onPress: () => setPaymentProcessing(false),
-          },
-          {
-            text: 'Payment Completed',
-            onPress: () => handlePaymentSuccess(order.id),
-          },
-        ]
+      // Process payment with Razorpay
+      const userDetails = {
+        name: 'User', // You might want to get this from user context
+        email: upiId.includes('@') ? upiId : `${upiId}@example.com`,
+        contact: '9999999999', // You might want to get this from user context
+      };
+
+      const razorpayResponse = await RazorpayService.processSubscriptionPayment(
+        selectedPlan,
+        userDetails,
+        checkoutData.finalAmount,
+        appliedCoupon?.code
       );
-    } catch (error) {
-      console.error('❌ Payment processing error:', error);
-      Alert.alert('Payment Failed', 'Failed to process payment. Please try again.');
+
+      console.log('✅ Razorpay payment successful:', razorpayResponse);
+      await handlePaymentSuccess(order.id);
+
+    } catch (error: any) {
+      console.error('❌ Razorpay payment error:', error);
+      
+      let errorMessage = 'Failed to process payment. Please try again.';
+      if (error?.code === 'payment_cancelled') {
+        errorMessage = 'Payment was cancelled by user.';
+      } else if (error?.code === 'payment_failed') {
+        errorMessage = 'Payment failed. Please check your payment details and try again.';
+      }
+      
+      Alert.alert('Payment Failed', errorMessage);
       setPaymentProcessing(false);
     }
   };
@@ -214,18 +286,35 @@ export default function CheckoutPage({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Checkout</Text>
-          <View style={styles.placeholder} />
-        </View>
+    <Modal visible={visible} animationType="none" presentationStyle="overFullScreen" transparent>
+      <View style={styles.modalOverlay}>
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              transform: [
+                { translateY: slideAnim },
+                { scale: scaleAnim }
+              ],
+              opacity: fadeAnim,
+            }
+          ]}
+        >
+          {/* Header */}
+          <LinearGradient
+            colors={['#FF4B6A', '#FF6B8A']}
+            style={styles.header}
+          >
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Secure Checkout</Text>
+            <View style={styles.securityBadge}>
+              <MaterialIcons name="security" size={16} color="#FFF" />
+            </View>
+          </LinearGradient>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Plan Summary */}
           <View style={styles.planSummary}>
             <Text style={styles.sectionTitle}>Selected Plan</Text>
@@ -281,12 +370,20 @@ export default function CheckoutPage({
               )}
             </View>
             {appliedCoupon && (
-              <View style={styles.couponSuccess}>
+              <Animated.View
+                style={[
+                  styles.couponSuccess,
+                  {
+                    transform: [{ scale: couponSuccessAnim }],
+                    opacity: couponSuccessAnim,
+                  }
+                ]}
+              >
                 <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
                 <Text style={styles.couponSuccessText}>
                   {appliedCoupon.discountPercentage}% discount applied!
                 </Text>
-              </View>
+              </Animated.View>
             )}
           </View>
 
@@ -363,15 +460,25 @@ export default function CheckoutPage({
             </LinearGradient>
           </TouchableOpacity>
         </View>
+        </Animated.View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginTop: 50,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -380,9 +487,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
-    backgroundColor: '#FFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  securityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   closeButton: {
     padding: 8,
@@ -390,7 +504,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#FFF',
   },
   placeholder: {
     width: 40,

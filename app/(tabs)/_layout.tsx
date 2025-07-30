@@ -37,7 +37,7 @@ export default function TabLayout() {
         name="home"
         options={{
           title: 'Home',
-          headerTitle: 'AFNNY',
+          headerTitle: 'AlphaDate',
           headerRight: () => (
             <TouchableOpacity 
               style={styles.notificationButton}

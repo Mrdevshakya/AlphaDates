@@ -120,7 +120,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {open ? <ChevronLeftIcon /> : <MenuIcon />}
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            AFNNY Admin
+            AlphaDate Admin
           </Typography>
           <IconButton
             size="large"

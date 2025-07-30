@@ -282,7 +282,7 @@ export default function HomeScreen() {
       ]}>
         <BlurView intensity={30} tint="dark" style={styles.headerBlur}>
           <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>AFNNY</Text>
+            <Text style={styles.headerTitle}>AlphaDate</Text>
             <View style={styles.headerActions}>
               <TouchableOpacity style={styles.headerButton}>
                 <Ionicons name="heart-outline" size={24} color="white" />

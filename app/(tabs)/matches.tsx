@@ -39,7 +39,7 @@ import { UserProfile } from '../../src/types';
 import { createNotification } from '../utils/notifications';
 import usePresence from '../hooks/usePresence';
 import SubscriptionPlans from '../components/SubscriptionPlans';
-import { createTestSubscription } from '../utils/testSubscription';
+import { SubscriptionService } from '../utils/subscription';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 30;
@@ -56,17 +56,56 @@ interface Match {
 
 interface MatchedUser extends UserProfile {
   isOnline: boolean;
+  matchSource?: 'user' | 'admin';
 }
 
 export default function MatchesScreen() {
-  const { user, hasActiveSubscription, refreshSubscription } = useAuth();
+  const { user, hasActiveSubscription, refreshSubscription, subscription } = useAuth();
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
 
   // Debug subscription status
   useEffect(() => {
     console.log('🎯 Matches Screen - User:', user?.uid);
     console.log('🎯 Matches Screen - Has Active Subscription:', hasActiveSubscription);
-  }, [user, hasActiveSubscription]);
+    console.log('🎯 Matches Screen - Subscription object:', subscription);
+    console.log('🎯 Matches Screen - typeof hasActiveSubscription:', typeof hasActiveSubscription);
+  }, [user, hasActiveSubscription, subscription]);
+
+  // Direct subscription check to bypass AuthContext issues
+  useEffect(() => {
+    const directSubscriptionCheck = async () => {
+      if (!user?.uid) {
+        setSubscriptionLoading(false);
+        return;
+      }
+      
+      console.log('🔍 Direct subscription check for user:', user.uid);
+      setSubscriptionLoading(true);
+      
+      try {
+        const directSubscription = await SubscriptionService.getUserSubscription(user.uid);
+        const directIsActive = await SubscriptionService.hasActiveSubscription(user.uid);
+        
+        console.log('📊 Direct check - Subscription:', directSubscription);
+        console.log('✅ Direct check - Is Active:', directIsActive);
+        console.log('🔄 AuthContext hasActiveSubscription:', hasActiveSubscription);
+        
+        if (directIsActive !== hasActiveSubscription) {
+          console.log('⚠️ MISMATCH DETECTED! Direct check:', directIsActive, 'AuthContext:', hasActiveSubscription);
+          console.log('🔄 Triggering AuthContext refresh...');
+          await refreshSubscription();
+        }
+      } catch (error) {
+        console.error('❌ Direct subscription check error:', error);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+
+    directSubscriptionCheck();
+  }, [user?.uid]);
+
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [potentialMatches, setPotentialMatches] = useState<UserProfile[]>([]);
@@ -224,26 +263,48 @@ export default function MatchesScreen() {
         where('id', '!=', user.uid)
       );
       
-      const [usersSnapshot, matchesSnapshot] = await Promise.all([
+      const [usersSnapshot, matchesSnapshot, adminMatchesSnapshot] = await Promise.all([
         getDocs(usersQuery),
         getDocs(query(
           collection(db, 'matches'),
+          where('users', 'array-contains', user.uid)
+        )),
+        // Get admin-created matches
+        getDocs(query(
+          collection(db, 'adminMatches'),
           where('users', 'array-contains', user.uid)
         ))
       ]);
 
       console.log('Found potential matches:', usersSnapshot.size);
       console.log('Found existing matches:', matchesSnapshot.size);
+      console.log('Found admin matches:', adminMatchesSnapshot.size);
 
-      // Get existing matches
+      // Get existing matches (both user-created and admin-created)
       const existingMatches = matchesSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
-      })) as Match[];
-      setMatches(existingMatches);
+        ...doc.data(),
+        source: 'user'
+      })) as (Match & { source: string })[];
+
+      // Get admin matches and convert them to regular matches format
+      const adminMatches = adminMatchesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          users: data.users,
+          createdAt: data.createdAt,
+          lastInteraction: data.createdAt,
+          isMatched: true, // Admin matches are automatically matched
+          source: 'admin'
+        };
+      }) as (Match & { source: string })[];
+
+      const allMatches = [...existingMatches, ...adminMatches];
+      setMatches(allMatches);
 
       // Filter out users that are already matched
-      const matchedUserIds = existingMatches
+      const matchedUserIds = allMatches
         .filter(match => match.isMatched)
         .flatMap(match => match.users)
         .filter(id => id !== user.uid);
@@ -257,10 +318,10 @@ export default function MatchesScreen() {
         // Make sure the user document has an id field
         userData.id = doc.id;
         
-        if (!matchedUserIds.includes(userData.id) && 
-            (!currentUserProfile.lookingFor || 
-             !userData.lookingFor || 
-             currentUserProfile.lookingFor === 'any' || 
+        if (!matchedUserIds.includes(userData.id) &&
+            (!currentUserProfile.lookingFor ||
+             !userData.lookingFor ||
+             currentUserProfile.lookingFor === 'any' ||
              userData.lookingFor === 'any' ||
              currentUserProfile.lookingFor === userData.lookingFor)) {
           users.push(userData);
@@ -282,7 +343,7 @@ export default function MatchesScreen() {
     try {
       const matchedUsersData: MatchedUser[] = [];
       
-      // Get all matches where isMatched is true
+      // Get all user matches where isMatched is true
       const matchesRef = collection(db, 'matches');
       const matchesQuery = query(
         matchesRef,
@@ -290,8 +351,19 @@ export default function MatchesScreen() {
         where('isMatched', '==', true)
       );
       
-      const matchesSnapshot = await getDocs(matchesQuery);
+      // Get all admin matches
+      const adminMatchesRef = collection(db, 'adminMatches');
+      const adminMatchesQuery = query(
+        adminMatchesRef,
+        where('users', 'array-contains', user.uid)
+      );
       
+      const [matchesSnapshot, adminMatchesSnapshot] = await Promise.all([
+        getDocs(matchesQuery),
+        getDocs(adminMatchesQuery)
+      ]);
+      
+      // Process user matches
       for (const matchDoc of matchesSnapshot.docs) {
         const matchData = matchDoc.data();
         const otherUserId = matchData.users.find((id: string) => id !== user.uid);
@@ -303,7 +375,27 @@ export default function MatchesScreen() {
             matchedUsersData.push({
               ...userData,
               id: userDoc.id,
-              isOnline: false // Will be updated by usePresence hook
+              isOnline: false, // Will be updated by usePresence hook
+              matchSource: 'user'
+            });
+          }
+        }
+      }
+      
+      // Process admin matches
+      for (const matchDoc of adminMatchesSnapshot.docs) {
+        const matchData = matchDoc.data();
+        const otherUserId = matchData.users.find((id: string) => id !== user.uid);
+        
+        if (otherUserId) {
+          const userDoc = await getDoc(doc(db, 'users', otherUserId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserProfile;
+            matchedUsersData.push({
+              ...userData,
+              id: userDoc.id,
+              isOnline: false, // Will be updated by usePresence hook
+              matchSource: 'admin'
             });
           }
         }
@@ -419,7 +511,14 @@ export default function MatchesScreen() {
           {userProfile.location && (
             <View style={styles.detailItem}>
               <Feather name="map-pin" size={16} color="#FFF" />
-              <Text style={styles.detailText}>{userProfile.location}</Text>
+              <Text style={styles.detailText}>
+                {typeof userProfile.location === 'string'
+                  ? userProfile.location
+                  : typeof userProfile.location === 'object' && userProfile.location._lat && userProfile.location._long
+                    ? `${userProfile.location._lat.toFixed(4)}, ${userProfile.location._long.toFixed(4)}`
+                    : 'Location available'
+                }
+              </Text>
             </View>
           )}
         </View>
@@ -543,10 +642,18 @@ export default function MatchesScreen() {
                         {matchedUser.name}
                       </Text>
                       {isOnline && <View style={styles.onlineIndicator} />}
+                      {matchedUser.matchSource === 'admin' && (
+                        <View style={styles.adminBadge}>
+                          <Text style={styles.adminBadgeText}>★</Text>
+                        </View>
+                      )}
                     </View>
                     <Text style={styles.matchedUserBio} numberOfLines={2}>
                       {matchedUser.bio || 'No bio yet'}
                     </Text>
+                    {matchedUser.matchSource === 'admin' && (
+                      <Text style={styles.adminMatchText}>Recommended by AlphaDate</Text>
+                    )}
                   </View>
                 </LinearGradient>
               </ImageBackground>
@@ -575,26 +682,6 @@ export default function MatchesScreen() {
         <Text style={styles.subscriptionStatusText}>❌ No Active Subscription</Text>
       </View>
       
-      {/* Test Button for Development */}
-      {__DEV__ && (
-        <TouchableOpacity
-          style={[styles.subscribeButton, { marginBottom: 10, backgroundColor: '#4CAF50' }]}
-          onPress={async () => {
-            if (user) {
-              try {
-                await createTestSubscription(user.uid);
-                Alert.alert('Test Subscription Created', 'A test subscription has been created. The app will refresh subscription status.');
-                // Refresh subscription status
-                await refreshSubscription();
-              } catch (error) {
-                Alert.alert('Error', 'Failed to create test subscription');
-              }
-            }
-          }}
-        >
-          <Text style={styles.subscribeButtonText}>Create Test Subscription (Dev Only)</Text>
-        </TouchableOpacity>
-      )}
       
       <TouchableOpacity
         style={styles.subscribeButton}
@@ -634,10 +721,12 @@ export default function MatchesScreen() {
         </View>
       </View>
 
-      {loading ? (
+      {loading || subscriptionLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FF4B6A" />
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Text style={styles.loadingText}>
+            {subscriptionLoading ? 'Checking subscription...' : 'Loading...'}
+          </Text>
         </View>
       ) : !hasActiveSubscription ? (
         <>
@@ -666,9 +755,10 @@ export default function MatchesScreen() {
         userId={user?.uid || ''}
         visible={showSubscriptionModal}
         onClose={() => setShowSubscriptionModal(false)}
-        onSubscriptionSuccess={() => {
+        onSubscriptionSuccess={async () => {
           // Refresh subscription status
-          // This will be handled by the AuthContext
+          await refreshSubscription();
+          setShowSubscriptionModal(false);
         }}
       />
     </View>
@@ -1040,5 +1130,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  adminBadge: {
+    backgroundColor: '#FFD700',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  adminBadgeText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  adminMatchText: {
+    fontSize: 12,
+    color: '#FFD700',
+    fontStyle: 'italic',
+    marginTop: 2,
   },
 });

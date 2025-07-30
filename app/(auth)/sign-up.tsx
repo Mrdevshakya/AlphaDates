@@ -93,7 +93,7 @@ export default function SignUpScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerContainer}>
-          <Text style={styles.logoText}>AFNNY</Text>
+          <Text style={styles.logoText}>AlphaDate</Text>
           <Text style={styles.welcomeText}>Create Account</Text>
           <Text style={styles.subtitleText}>Let's help you find your perfect match</Text>
         </View>

@@ -153,10 +153,10 @@ export default function ProfileScreen() {
   };
 
   const handleShare = async () => {
-    const profileUrl = `afnny-missmatch://profile/${userId || user?.uid}`;
+    const profileUrl = `alphadate-app://profile/${userId || user?.uid}`;
     try {
       await Share.share({
-        message: `Check out my profile on Amity Missmatch: ${profileUrl}`,
+        message: `Check out my profile on AlphaDate: ${profileUrl}`,
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -619,7 +619,7 @@ export default function ProfileScreen() {
 
             <View style={styles.qrContainer}>
               <QRCode
-                value={`afnny-missmatch://profile/${userId || user?.uid}`}
+                value={`alphadate-app://profile/${userId || user?.uid}`}
                 size={QR_CODE_SIZE}
                 getRef={(ref) => setQrRef(ref)}
               />

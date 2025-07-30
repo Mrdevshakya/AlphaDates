@@ -213,7 +213,35 @@ export default function AccountSettings() {
             'help-circle-outline',
             'Help & Support',
             'Get help and contact support',
-            () => router.push('/profile/settings/help')
+            () => router.push('/(tabs)/profile/settings/contact-support')
+          )}
+        </BlurView>
+
+        <BlurView intensity={10} tint="dark" style={styles.section}>
+          <Text style={styles.sectionTitle}>Legal & Information</Text>
+          {renderSettingItem(
+            'shield-outline',
+            'Privacy Policy',
+            'How we handle your data',
+            () => router.push('/(tabs)/profile/settings/privacy-policy')
+          )}
+          {renderSettingItem(
+            'document-text-outline',
+            'Terms & Conditions',
+            'App usage terms and rules',
+            () => router.push('/(tabs)/profile/settings/terms-conditions')
+          )}
+          {renderSettingItem(
+            'card-outline',
+            'Refund Policy',
+            'Payment and cancellation policy',
+            () => router.push('/(tabs)/profile/settings/refund-policy')
+          )}
+          {renderSettingItem(
+            'information-circle-outline',
+            'About Us',
+            'Learn more about AlphaDate',
+            () => router.push('/(tabs)/profile/settings/about-us')
           )}
         </BlurView>
 
