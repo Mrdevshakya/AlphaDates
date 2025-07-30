@@ -115,7 +115,9 @@ const SignInScreen = () => {
             </View>
 
             <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              <Link href="/(auth)/forgot-password" asChild>
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              </Link>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -188,17 +190,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoText: {
-    fontSize: 42,
-    fontWeight: 'bold',
+    fontSize: 85,
+    fontWeight: 'normal',
     color: '#fff',
+    fontFamily: 'The Bigmaker PersonalUseOnly',
     marginBottom: 20,
-    letterSpacing: 2,
+    letterSpacing: 3,
   },
   welcomeText: {
     fontSize: 32,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 10,
+    marginBottom: 5,
   },
   subtitleText: {
     fontSize: 16,

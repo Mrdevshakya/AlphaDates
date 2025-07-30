@@ -96,7 +96,13 @@ export default function AccountCenterScreen() {
           {renderInfoItem(
             'location-outline',
             'Location',
-            userData?.location,
+            userData?.location
+              ? typeof userData.location === 'string'
+                ? userData.location
+                : (userData.location as any)?._lat && (userData.location as any)?._long
+                  ? `${(userData.location as any)._lat.toFixed(4)}, ${(userData.location as any)._long.toFixed(4)}`
+                  : 'Location available'
+              : undefined,
             () => router.push('/profile/edit')
           )}
           {renderInfoItem(

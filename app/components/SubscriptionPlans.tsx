@@ -32,56 +32,111 @@ export default function SubscriptionPlans({
   onClose,
   onSubscriptionSuccess
 }: SubscriptionPlansProps) {
-  const [plans] = useState<SubscriptionPlan[]>(SubscriptionService.getSubscriptionPlans());
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Animation values
   const slideAnim = useState(new Animated.Value(width))[0];
   const fadeAnim = useState(new Animated.Value(0))[0];
-  const planAnimations = useState(
-    plans.map(() => new Animated.Value(0))
-  )[0];
+  const [planAnimations, setPlanAnimations] = useState<Animated.Value[]>([]);
+
+  const initializePlans = () => {
+    try {
+      console.log('📱 Loading subscription plans...');
+      const availablePlans = SubscriptionService.getSubscriptionPlans();
+      console.log('✅ Loaded plans:', JSON.stringify(availablePlans, null, 2));
+      
+      if (!Array.isArray(availablePlans) || availablePlans.length === 0) {
+        console.error('❌ No plans returned from SubscriptionService');
+        setError('No subscription plans available');
+        return;
+      }
+
+      // Validate plan data
+      const validPlans = availablePlans.filter(plan => 
+        plan && plan.id && plan.name && typeof plan.price === 'number'
+      );
+
+      if (validPlans.length === 0) {
+        console.error('❌ No valid plans found in:', availablePlans);
+        setError('Invalid subscription plan data');
+        return;
+      }
+
+      console.log('✅ Valid plans found:', validPlans.length);
+      setPlans(validPlans);
+      
+      // Initialize animations for new plans
+      const newAnimations = validPlans.map(() => new Animated.Value(0));
+      setPlanAnimations(newAnimations);
+      
+      setError(null);
+    } catch (err) {
+      console.error('❌ Error loading plans:', err);
+      setError('Failed to load subscription plans');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load plans and initialize animations
+  useEffect(() => {
+    initializePlans();
+  }, []);
 
   // Animation effects
   useEffect(() => {
+    console.log('🔄 Visibility changed:', visible, 'Plans:', plans.length, 'Animations:', planAnimations.length);
+    
     if (visible) {
-      // Animate in
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Stagger plan animations
-      const planStaggerAnimations = planAnimations.map((anim, index) =>
-        Animated.timing(anim, {
-          toValue: 1,
-          duration: 300,
-          delay: index * 100,
-          useNativeDriver: true,
-        })
-      );
-      
-      Animated.stagger(100, planStaggerAnimations).start();
-      
+      // Always load current subscription when modal becomes visible
       loadCurrentSubscription();
+      
+      if (plans.length > 0 && planAnimations.length === plans.length) {
+        console.log('🎭 Starting animations for', plans.length, 'plans');
+        
+        // Reset animations first
+        slideAnim.setValue(width);
+        fadeAnim.setValue(0);
+        planAnimations.forEach(anim => anim.setValue(0));
+        
+        // Animate in with a slight delay to ensure reset is complete
+        setTimeout(() => {
+          Animated.parallel([
+            Animated.timing(slideAnim, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+          ]).start();
+
+          // Stagger plan animations
+          planAnimations.forEach((anim, index) => {
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 300,
+              delay: index * 100,
+              useNativeDriver: true,
+            }).start();
+          });
+        }, 100);
+      }
     } else {
-      // Reset animations
+      // Reset animations when hiding
       slideAnim.setValue(width);
       fadeAnim.setValue(0);
       planAnimations.forEach(anim => anim.setValue(0));
     }
-  }, [visible]);
+  }, [visible, plans.length, planAnimations.length]);
 
   const loadCurrentSubscription = async () => {
     try {
@@ -117,24 +172,31 @@ export default function SubscriptionPlans({
   };
 
   const renderPlanCard = (plan: SubscriptionPlan, index: number) => {
+    if (!plan) {
+      console.warn('❌ Attempted to render invalid plan:', plan);
+      return null;
+    }
+
     const isCurrentPlan = currentSubscription?.planId === plan.id;
     const monthlyPrice = Math.round(plan.price / plan.duration);
+
+    console.log(`📦 Rendering plan: ${plan.name}, Price: ₹${plan.price}, Monthly: ₹${monthlyPrice}`);
 
     return (
       <Animated.View
         key={plan.id}
         style={[
           {
-            opacity: planAnimations[index],
+            opacity: planAnimations[index] || new Animated.Value(1),
             transform: [
               {
-                translateY: planAnimations[index].interpolate({
+                translateY: (planAnimations[index] || new Animated.Value(0)).interpolate({
                   inputRange: [0, 1],
                   outputRange: [50, 0],
                 }),
               },
               {
-                scale: planAnimations[index].interpolate({
+                scale: (planAnimations[index] || new Animated.Value(0)).interpolate({
                   inputRange: [0, 1],
                   outputRange: [0.9, 1],
                 }),
@@ -247,15 +309,54 @@ export default function SubscriptionPlans({
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#FF4B6A" />
+              <Text style={styles.loadingText}>Loading subscription plans...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <MaterialIcons name="error-outline" size={48} color="#FF4B6A" />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => {
+                  setLoading(true);
+                  setError(null);
+                  initializePlans();
+                }}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : plans.length === 0 ? (
+            <View style={styles.errorContainer}>
+              <MaterialIcons name="error-outline" size={48} color="#FF4B6A" />
+              <Text style={styles.errorText}>No subscription plans available</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => {
+                  setLoading(true);
+                  setError(null);
+                  initializePlans();
+                }}
+              >
+                <Text style={styles.retryButtonText}>Refresh Plans</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <>
+            <Animated.View
+              style={{
+                opacity: fadeAnim,
+                transform: [{ translateX: slideAnim }],
+              }}
+            >
               {renderCurrentSubscription()}
               
               <View style={styles.plansContainer}>
-                {plans.map((plan, index) => renderPlanCard(plan, index))}
+                {plans.map((plan, index) => {
+                  console.log(`🎨 Rendering plan ${index + 1}:`, plan.name);
+                  return renderPlanCard(plan, index);
+                })}
               </View>
-            </>
+            </Animated.View>
           )}
         </ScrollView>
 
@@ -278,6 +379,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a1a',
+  },
+  loadingText: {
+    color: '#FFF',
+    fontSize: 16,
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    color: '#FF4B6A',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  retryButton: {
+    backgroundColor: '#FF4B6A',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  retryButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   header: {
     flexDirection: 'row',

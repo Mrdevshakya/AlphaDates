@@ -311,12 +311,13 @@ const styles = StyleSheet.create({
     paddingBottom: height * 0.05,
     alignItems: 'center',
   },
-  logoText: {
-    fontSize: 42,
-    fontWeight: 'bold',
+   logoText: {
+    fontSize: 85,
+    fontWeight: 'normal',
     color: '#fff',
+    fontFamily: 'The Bigmaker PersonalUseOnly',
     marginBottom: 20,
-    letterSpacing: 2,
+    letterSpacing: 3,
   },
   welcomeText: {
     fontSize: 32,

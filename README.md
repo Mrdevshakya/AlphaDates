@@ -68,26 +68,39 @@ AFNNY is a sophisticated dating application built with React Native and Expo, de
 
 ```
 afnny-missmatch/
-├── app/                      # Main application code
-│   ├── (auth)/              # Authentication screens
-│   │   ├── sign-in.tsx      # Sign in screen
-│   │   └── sign-up.tsx      # Sign up screen
-│   ├── (tabs)/              # Main tab screens
-│   │   ├── chat.tsx         # Chat list screen
-│   │   ├── explore.tsx      # Match exploration
-│   │   ├── home.tsx         # Home feed
-│   │   ├── matches.tsx      # Matches list
-│   │   └── profile/         # Profile section
-│   │       ├── edit.tsx     # Profile editing
-│   │       ├── index.tsx    # Profile view
-│   │       └── settings/    # User settings
-│   ├── chat/                # Chat functionality
-│   │   └── [id].tsx         # Individual chat screen
-│   ├── components/          # Reusable components
-│   │   ├── FollowList.tsx   # Following/Followers list
-│   │   ├── Post.tsx         # Post component
-│   │   ├── Stories.tsx      # Stories component
-│   │   └── UserProfileModal # User profile modal
+├── app/                           # Main application code
+│   ├── (auth)/                   # Authentication screens
+│   │   ├── _layout.tsx
+│   │   ├── forgot-password.tsx
+│   │   ├── sign-in.tsx          # Sign in screen
+│   │   └── sign-up.tsx          # Sign up screen
+│   ├── (tabs)/                   # Main tab screens
+│   │   ├── _layout.tsx
+│   │   ├── chat.tsx             # Chat list screen
+│   │   ├── explore.tsx          # Match exploration
+│   │   ├── home.tsx             # Home feed
+│   │   ├── matches.tsx          # Matches list
+│   │   └── profile/             # Profile section
+│   │       ├── _layout.tsx
+│   │       ├── edit.tsx         # Profile editing
+│   │       ├── index.tsx        # Profile view
+│   │       └── settings/        # User settings
+│   │           ├── _layout.tsx
+│   │           ├── about-us.tsx
+│   │           ├── about.tsx
+│   │           └── account.tsx
+│   ├── chat/                     # Chat functionality
+│   │   ├── _layout.tsx
+│   │   └── [id].tsx             # Individual chat screen
+│   ├── components/               # Reusable components
+│   │   ├── CheckoutPage.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   ├── FollowList.tsx
+│   │   ├── Post.tsx
+│   │   ├── Stories.tsx
+│   │   ├── SubscriptionPlans.tsx
+│   │   ├── Toast.tsx
+│   │   └── UserProfileModal.tsx
 │   ├── config/              # Configuration files
 │   │   └── firebase.ts      # Firebase configuration
 │   ├── context/             # React Context providers

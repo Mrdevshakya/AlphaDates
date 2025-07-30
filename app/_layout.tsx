@@ -1,6 +1,10 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import AuthProvider, { useAuth } from './context/AuthContext';
 import { useEffect } from 'react';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync();
 
 // Handle authentication routing
 function RootLayoutNav() {
@@ -32,6 +36,20 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    'The Bigmaker PersonalUseOnly': require('../assets/fonts/The Bigmaker PersonalUseOnly.ttf'),
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return (
     <AuthProvider>
       <RootLayoutNav />

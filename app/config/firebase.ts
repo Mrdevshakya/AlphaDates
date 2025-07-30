@@ -3,6 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+
 // Firebase config
 const firebaseConfig = {
   apiKey: "AIzaSyCeGIDwn5i0ILC3t2bH_-ydu6VJkYUPTXA",
