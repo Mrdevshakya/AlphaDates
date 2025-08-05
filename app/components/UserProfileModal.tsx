@@ -124,7 +124,11 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 {user.location && (
                   <View style={styles.locationContainer}>
                     <Ionicons name="location" size={16} color="white" />
-                    <Text style={styles.location}>{user.location}</Text>
+                    <Text style={styles.location}>
+                      {typeof user.location === 'string' 
+                        ? user.location 
+                        : `${user.location._lat}, ${user.location._long}`}
+                    </Text>
                   </View>
                 )}
               </View>

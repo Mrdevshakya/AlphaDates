@@ -32,7 +32,8 @@ import {
   updateDoc,
   arrayUnion,
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { UserProfile } from '../../src/types';
@@ -40,6 +41,7 @@ import { createNotification } from '../utils/notifications';
 import usePresence from '../hooks/usePresence';
 import SubscriptionPlans from '../components/SubscriptionPlans';
 import { SubscriptionService } from '../utils/subscription';
+
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 30;

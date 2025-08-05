@@ -422,7 +422,11 @@ export default function ExploreScreen() {
                 {user.location && (
                   <View style={styles.detailItem}>
                     <Ionicons name="location-outline" size={18} color="#FFF" />
-                    <Text style={styles.detailText}>{user.location}</Text>
+                    <Text style={styles.detailText}>
+                      {typeof user.location === 'string' 
+                        ? user.location 
+                        : `${user.location._lat}, ${user.location._long}`}
+                    </Text>
                   </View>
                 )}
               </View>
