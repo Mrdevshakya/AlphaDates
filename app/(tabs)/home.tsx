@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,6 +12,8 @@ import {
   StatusBar,
   Animated,
   ListRenderItem,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import Stories from '../components/Stories';
@@ -23,6 +25,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 const AnimatedFlatList = Animated.createAnimatedComponent<any>(FlatList);
 
@@ -40,6 +43,40 @@ export default function HomeScreen() {
   const [indexBuildError, setIndexBuildError] = useState<string | null>(null);
   const [scrollY] = useState(new Animated.Value(0));
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const [hasNavigated, setHasNavigated] = useState(false);
+  
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (evt, gestureState) => {
+        // Increased edge detection area to 80px for faster response
+        return evt.nativeEvent.pageX < 80;
+      },
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Set responder if it's a horizontal swipe from left edge
+        return evt.nativeEvent.pageX < 80 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+      },
+      onPanResponderGrant: () => {
+        // Reset navigation flag when gesture starts
+        setHasNavigated(false);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Check if it's a right swipe (positive dx) and predominantly horizontal
+        // Reduced threshold for faster response: 40px instead of 60px
+        if (!hasNavigated && gestureState.dx > 40 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) {
+          setHasNavigated(true);
+          // Navigate to camera screen instantly (as modal without tab bar)
+          router.push('/camera');
+        }
+      },
+      onPanResponderRelease: () => {
+        // Reset navigation flag
+        setHasNavigated(false);
+      },
+      onPanResponderTerminationRequest: () => false, // Don't allow termination during gesture
+      onShouldBlockNativeResponder: () => false, // Don't block native responders
+    })
+  ).current;
 
   const renderItem: ListRenderItem<PostWithUser> = ({ item }) => (
     <Post
@@ -383,7 +420,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...panResponder.panHandlers}>
       <StatusBar barStyle="light-content" />
       {renderHeader()}
       <AnimatedFlatList
@@ -414,6 +451,8 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       />
+      
+
     </View>
   );
 }
@@ -493,7 +532,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
     textAlign: 'center',
-    marginVertical: 20,
   },
   linkButton: {
     width: '60%',

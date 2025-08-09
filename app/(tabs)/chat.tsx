@@ -78,7 +78,7 @@ export default function ChatScreen() {
               participantsData[id] = {
                 id,
                 name: userData.name || 'Anonymous',
-                photo: userData.photos?.[0],
+                photo: userData.profilePicture || userData.photos?.[0],
                 online: false, // You would need a separate online status system
                 lastSeen: userData.lastLoginAt,
               };
@@ -246,20 +246,7 @@ export default function ChatScreen() {
         ListEmptyComponent={renderEmptyComponent}
       />
 
-      {/* New Chat Button */}
-      <TouchableOpacity 
-        style={styles.newChatButton}
-        onPress={() => router.push('/explore')}
-      >
-        <LinearGradient
-          colors={['#FF4B6A', '#FF8C9F']}
-          style={styles.newChatGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <Ionicons name="add" size={24} color="white" />
-        </LinearGradient>
-      </TouchableOpacity>
+
     </View>
   );
 }
@@ -302,6 +289,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 16,
     borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   searchIcon: {
     marginRight: 8,
@@ -311,6 +306,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     padding: 0,
+    marginLeft: 8,
   },
   chatList: {
     paddingTop: 16,
@@ -319,6 +315,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 16,
     alignItems: 'center',
+    backgroundColor: '#1a1a1a',
   },
   avatarContainer: {
     position: 'relative',
@@ -341,11 +338,11 @@ const styles = StyleSheet.create({
   },
   onlineIndicator: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#4CAF50',
     borderWidth: 2,
     borderColor: '#1a1a1a',
@@ -382,11 +379,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   unreadIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: '#FF4B6A',
     marginLeft: 8,
+    alignSelf: 'center',
   },
   emptyContainer: {
     flex: 1,
@@ -411,24 +409,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  newChatButton: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-  },
-  newChatGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
+
 });

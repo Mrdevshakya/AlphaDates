@@ -2,15 +2,15 @@ import { ExpoConfig } from 'expo/config';
 
 const config: ExpoConfig = {
   name: 'AlphaDate',
-  slug: 'alphadate-app',
+  slug: 'alphadate',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/images/logo.svg',
+  icon: './assets/images/logo.png',
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/images/logo.svg',
+    image: './assets/images/splash-new.png',
     resizeMode: 'contain',
-    backgroundColor: '#ffffff'
+    backgroundColor: '#1a1a1a'
   },
   assetBundlePatterns: [
     '**/*'
@@ -21,13 +21,13 @@ const config: ExpoConfig = {
   },
   android: {
     adaptiveIcon: {
-      foregroundImage: './assets/images/logo.svg',
-      backgroundColor: '#ffffff'
+      foregroundImage: './assets/images/logo.png',
+      backgroundColor: '#1a1a1a'
     },
     package: 'com.alphadate.app'
   },
   web: {
-    favicon: './assets/images/logo.svg'
+    favicon: './assets/images/logo.png'
   },
   plugins: [
     'expo-router',
@@ -47,7 +47,7 @@ const config: ExpoConfig = {
     [
       'expo-notifications',
       {
-        icon: './assets/images/logo.svg',
+        icon: './assets/images/logo.png',
         color: '#ffffff'
       }
     ]
@@ -58,7 +58,7 @@ const config: ExpoConfig = {
       origin: false
     },
     eas: {
-      projectId: 'your-project-id'
+      projectId: '8ce98233-409d-48d1-ae2b-06ad35eefb6c'
     }
   }
 };

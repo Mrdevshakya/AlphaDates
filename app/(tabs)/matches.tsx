@@ -42,11 +42,64 @@ import usePresence from '../hooks/usePresence';
 import SubscriptionPlans from '../components/SubscriptionPlans';
 import { SubscriptionService } from '../utils/subscription';
 
-
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 30;
 const CARD_HEIGHT = height * 0.6;
 const SWIPE_THRESHOLD = 120;
+
+// Separate component for matched user to properly use hooks
+const MatchedUserItem = ({ user, onMessage }: { user: MatchedUser; onMessage: (userId: string) => void }) => {
+  const isOnline = usePresence(user.id);
+  
+  return (
+    <TouchableOpacity
+      style={styles.matchedUserCard}
+      onPress={() => onMessage(user.id)}
+    >
+      <ImageBackground
+        source={
+          user.photos?.[0]
+            ? { uri: user.photos[0] }
+            : require('../../assets/images/default-avatar.svg')
+        }
+        style={styles.matchedUserImage}
+        imageStyle={styles.matchedUserImageStyle}
+      >
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={styles.matchedUserGradient}
+        >
+          <View style={styles.matchedUserInfo}>
+            <View style={styles.matchedUserNameRow}>
+              <Text style={styles.matchedUserName}>
+                {user.name}
+              </Text>
+              {isOnline && <View style={styles.onlineIndicator} />}
+              {user.matchSource === 'admin' && (
+                <View style={styles.adminBadge}>
+                  <Text style={styles.adminBadgeText}>★</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.matchedUserBio} numberOfLines={2}>
+              {user.bio || 'No bio yet'}
+            </Text>
+            {user.matchSource === 'admin' && (
+              <Text style={styles.adminMatchText}>Recommended by AlphaDate</Text>
+            )}
+          </View>
+        </LinearGradient>
+      </ImageBackground>
+      <TouchableOpacity
+        style={styles.messageButton}
+        onPress={() => onMessage(user.id)}
+      >
+        <Ionicons name="chatbubble" size={20} color="#FFF" />
+        <Text style={styles.messageButtonText}>Message</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+};
 
 interface Match {
   id: string;
@@ -258,15 +311,11 @@ export default function MatchesScreen() {
       const currentUserProfile = userDoc.data() as UserProfile;
       console.log('Current user profile:', currentUserProfile);
 
-      // Get all potential matches
+      // Get all potential matches (excluding current user)
       const usersRef = collection(db, 'users');
-      const usersQuery = query(
-        usersRef,
-        where('id', '!=', user.uid)
-      );
+      const usersSnapshot = await getDocs(usersRef);
       
-      const [usersSnapshot, matchesSnapshot, adminMatchesSnapshot] = await Promise.all([
-        getDocs(usersQuery),
+      const [matchesSnapshot, adminMatchesSnapshot] = await Promise.all([
         getDocs(query(
           collection(db, 'matches'),
           where('users', 'array-contains', user.uid)
@@ -278,7 +327,13 @@ export default function MatchesScreen() {
         ))
       ]);
 
-      console.log('Found potential matches:', usersSnapshot.size);
+      // Filter out current user on client side
+      const filteredUsersSnapshot = {
+        ...usersSnapshot,
+        docs: usersSnapshot.docs.filter(doc => doc.id !== user.uid)
+      };
+
+      console.log('Found potential matches:', filteredUsersSnapshot.size);
       console.log('Found existing matches:', matchesSnapshot.size);
       console.log('Found admin matches:', adminMatchesSnapshot.size);
 
@@ -313,19 +368,34 @@ export default function MatchesScreen() {
 
       console.log('Already matched users:', matchedUserIds);
 
-      // Filter users client-side based on preferences
+      // Filter users client-side based on preferences and opposite gender
       const users: UserProfile[] = [];
-      usersSnapshot.forEach((doc) => {
+      filteredUsersSnapshot.docs.forEach((doc) => {
         const userData = doc.data() as UserProfile;
         // Make sure the user document has an id field
         userData.id = doc.id;
         
-        if (!matchedUserIds.includes(userData.id) &&
-            (!currentUserProfile.lookingFor ||
-             !userData.lookingFor ||
-             currentUserProfile.lookingFor === 'any' ||
-             userData.lookingFor === 'any' ||
-             currentUserProfile.lookingFor === userData.lookingFor)) {
+        // Check if user is already matched
+        if (matchedUserIds.includes(userData.id)) {
+          return; // Skip already matched users
+        }
+        
+        // Gender preference filtering - show opposite gender only
+        // If current user is male, show female profiles and vice versa
+        const isOppositeGender = currentUserProfile.gender === 'male' ? 
+          userData.gender === 'female' : 
+          currentUserProfile.gender === 'female' ? 
+          userData.gender === 'male' : 
+          true; // If user is other, show all genders
+        
+        // Additional preference filtering
+        const matchesPreferences = (!currentUserProfile.lookingFor ||
+          !userData.lookingFor ||
+          currentUserProfile.lookingFor === 'any' ||
+          userData.lookingFor === 'any' ||
+          currentUserProfile.lookingFor === userData.lookingFor);
+        
+        if (isOppositeGender && matchesPreferences) {
           users.push(userData);
         }
       });
@@ -342,8 +412,11 @@ export default function MatchesScreen() {
 
   const fetchMatchedUsers = async () => {
     if (!user) return;
+    console.log('Fetching matched users for user:', user.uid);
     try {
       const matchedUsersData: MatchedUser[] = [];
+      // Use a Set to track user IDs to prevent duplicates
+      const userIds = new Set<string>();
       
       // Get all user matches where isMatched is true
       const matchesRef = collection(db, 'matches');
@@ -353,7 +426,7 @@ export default function MatchesScreen() {
         where('isMatched', '==', true)
       );
       
-      // Get all admin matches
+      // Get all admin matches (admin matches are automatically matched)
       const adminMatchesRef = collection(db, 'adminMatches');
       const adminMatchesQuery = query(
         adminMatchesRef,
@@ -365,21 +438,29 @@ export default function MatchesScreen() {
         getDocs(adminMatchesQuery)
       ]);
       
+      console.log('Found matched users:', matchesSnapshot.size);
+      console.log('Found admin matches:', adminMatchesSnapshot.size);
+      
       // Process user matches
       for (const matchDoc of matchesSnapshot.docs) {
         const matchData = matchDoc.data();
+        console.log('Processing user match:', matchDoc.id, matchData);
         const otherUserId = matchData.users.find((id: string) => id !== user.uid);
         
-        if (otherUserId) {
+        if (otherUserId && !userIds.has(otherUserId)) {
+          userIds.add(otherUserId);
           const userDoc = await getDoc(doc(db, 'users', otherUserId));
           if (userDoc.exists()) {
             const userData = userDoc.data() as UserProfile;
+            console.log('Found matched user:', userDoc.id, userData);
             matchedUsersData.push({
               ...userData,
               id: userDoc.id,
               isOnline: false, // Will be updated by usePresence hook
               matchSource: 'user'
             });
+          } else {
+            console.log('User document not found for ID:', otherUserId);
           }
         }
       }
@@ -387,22 +468,28 @@ export default function MatchesScreen() {
       // Process admin matches
       for (const matchDoc of adminMatchesSnapshot.docs) {
         const matchData = matchDoc.data();
+        console.log('Processing admin match:', matchDoc.id, matchData);
         const otherUserId = matchData.users.find((id: string) => id !== user.uid);
         
-        if (otherUserId) {
+        if (otherUserId && !userIds.has(otherUserId)) {
+          userIds.add(otherUserId);
           const userDoc = await getDoc(doc(db, 'users', otherUserId));
           if (userDoc.exists()) {
             const userData = userDoc.data() as UserProfile;
+            console.log('Found admin matched user:', userDoc.id, userData);
             matchedUsersData.push({
               ...userData,
               id: userDoc.id,
               isOnline: false, // Will be updated by usePresence hook
               matchSource: 'admin'
             });
+          } else {
+            console.log('User document not found for ID:', otherUserId);
           }
         }
       }
       
+      console.log('Matched users data:', matchedUsersData);
       setMatchedUsers(matchedUsersData);
     } catch (error) {
       console.error('Error fetching matched users:', error);
@@ -423,12 +510,16 @@ export default function MatchesScreen() {
     if (activeTab === 'matches') {
       fetchMatchedUsers();
     }
-  }, [activeTab]);
+  }, [activeTab, user]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
-    fetchMatches().finally(() => setRefreshing(false));
-  }, []);
+    if (activeTab === 'discover') {
+      fetchMatches().finally(() => setRefreshing(false));
+    } else {
+      fetchMatchedUsers().finally(() => setRefreshing(false));
+    }
+  }, [activeTab]);
 
   const handleMessage = async (userId: string) => {
     if (!user) return;
@@ -610,65 +701,17 @@ export default function MatchesScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              fetchMatchedUsers().finally(() => setRefreshing(false));
-            }}
+            onRefresh={onRefresh}
           />
         }
       >
-        {matchedUsers.map((matchedUser) => {
-          const isOnline = usePresence(matchedUser.id);
-          return (
-            <TouchableOpacity
-              key={matchedUser.id}
-              style={styles.matchedUserCard}
-              onPress={() => handleMessage(matchedUser.id)}
-            >
-              <ImageBackground
-                source={
-                  matchedUser.photos?.[0]
-                    ? { uri: matchedUser.photos[0] }
-                    : require('../../assets/images/default-avatar.svg')
-                }
-                style={styles.matchedUserImage}
-                imageStyle={styles.matchedUserImageStyle}
-              >
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.8)']}
-                  style={styles.matchedUserGradient}
-                >
-                  <View style={styles.matchedUserInfo}>
-                    <View style={styles.matchedUserNameRow}>
-                      <Text style={styles.matchedUserName}>
-                        {matchedUser.name}
-                      </Text>
-                      {isOnline && <View style={styles.onlineIndicator} />}
-                      {matchedUser.matchSource === 'admin' && (
-                        <View style={styles.adminBadge}>
-                          <Text style={styles.adminBadgeText}>★</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.matchedUserBio} numberOfLines={2}>
-                      {matchedUser.bio || 'No bio yet'}
-                    </Text>
-                    {matchedUser.matchSource === 'admin' && (
-                      <Text style={styles.adminMatchText}>Recommended by AlphaDate</Text>
-                    )}
-                  </View>
-                </LinearGradient>
-              </ImageBackground>
-              <TouchableOpacity
-                style={styles.messageButton}
-                onPress={() => handleMessage(matchedUser.id)}
-              >
-                <Ionicons name="chatbubble" size={20} color="#FFF" />
-                <Text style={styles.messageButtonText}>Message</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          );
-        })}
+        {matchedUsers.map((matchedUser) => (
+          <MatchedUserItem 
+            key={`${matchedUser.id}-${matchedUser.matchSource || 'user'}`} 
+            user={matchedUser} 
+            onMessage={handleMessage} 
+          />
+        ))}
       </ScrollView>
     );
   };

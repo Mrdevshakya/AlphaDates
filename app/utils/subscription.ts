@@ -290,7 +290,6 @@ export class SubscriptionService {
     originalAmount: number;
     discountAmount: number;
     couponCode?: string;
-    upiId: string;
   }): Promise<EnhancedPaymentOrder> {
     try {
       console.log('💳 SubscriptionService: Creating enhanced payment order:', orderData);
@@ -307,7 +306,6 @@ export class SubscriptionService {
         amount: orderData.amount,
         originalAmount: orderData.originalAmount,
         discountAmount: orderData.discountAmount,
-        upiId: orderData.upiId,
         currency: 'INR',
         status: 'created' as const,
         createdAt: serverTimestamp(),

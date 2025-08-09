@@ -50,6 +50,7 @@ export default function ProfileScreen() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrRef, setQrRef] = useState<QRCodeRef | null>(null);
   const [stories, setStories] = useState<Array<{ story: Story; user: UserProfile }>>([]);
+  const [posts, setPosts] = useState<Array<{ post: any; user: UserProfile }>>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   
@@ -88,11 +89,32 @@ export default function ProfileScreen() {
           .filter((item): item is { story: Story; user: UserProfile } => item !== null);
 
         setStories(storiesData);
+        
+        // Load posts
+        const postsQuery = query(
+          collection(db, 'posts'),
+          where('userId', '==', targetUserId),
+          orderBy('createdAt', 'desc')
+        );
+        
+        const postsSnapshot = await getDocs(postsQuery);
+        const postsData = postsSnapshot.docs
+          .map(doc => {
+            const user = isOwnProfile ? userData : profileData;
+            if (!user) return null;
+            return {
+              post: { id: doc.id, ...doc.data() },
+              user,
+            };
+          })
+          .filter((item): item is { post: any; user: UserProfile } => item !== null);
+
+        setPosts(postsData);
       }
     };
     
     loadProfile();
-  }, [user, userId]);
+  }, [user, userId, userData, profileData]);
 
   const displayData = isOwnProfile ? userData : profileData;
 
@@ -358,9 +380,17 @@ export default function ProfileScreen() {
     }
   };
 
-  const renderPhoto = ({ item }: { item: string }) => (
+  const renderPost = ({ item }: { item: { post: any; user: UserProfile } }) => (
     <TouchableOpacity style={styles.photoContainer}>
-      <Image source={{ uri: item }} style={styles.photo} />
+      <Image 
+        source={{ uri: item.post.imageUrl || item.post.videoUrl }} 
+        style={styles.photo} 
+      />
+      {item.post.videoUrl && (
+        <View style={styles.videoIndicator}>
+          <Ionicons name="play" size={24} color="white" />
+        </View>
+      )}
     </TouchableOpacity>
   );
 
@@ -564,10 +594,10 @@ export default function ProfileScreen() {
         {/* Tab Content */}
         {activeTab === 'photos' && (
           <View style={styles.photosContainer}>
-            {displayData.photos && displayData.photos.length > 0 ? (
+            {posts && posts.length > 0 ? (
               <FlatList
-                data={displayData.photos}
-                renderItem={renderPhoto}
+                data={posts}
+                renderItem={renderPost}
                 numColumns={3}
                 scrollEnabled={false}
                 style={styles.photosGrid}
@@ -576,7 +606,7 @@ export default function ProfileScreen() {
             ) : (
               <View style={styles.emptyState}>
                 <Ionicons name="images-outline" size={48} color="#666" />
-                <Text style={styles.emptyStateText}>No photos yet</Text>
+                <Text style={styles.emptyStateText}>No posts yet</Text>
               </View>
             )}
           </View>
@@ -862,6 +892,15 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 8,
+  },
+  videoIndicator: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -12 }, { translateY: -12 }],
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    padding: 8,
   },
   content: {
     padding: 20,

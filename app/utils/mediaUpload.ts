@@ -1,42 +1,20 @@
 import { storage, db } from '../config/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Story } from '../../src/types';
-import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { Post } from '../../src/types';
 
-export const pickStoryMedia = async () => {
-  // Request permissions
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
-    throw new Error('Permission to access media library was denied');
-  }
-
-  // Pick media
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: 'images',
-    allowsEditing: true,
-    quality: 0.8,
-    videoMaxDuration: 15, // 15 seconds max for stories
-  });
-
-  if (!result.canceled) {
-    return result.assets[0];
-  }
-  return null;
-};
-
-export const uploadStory = async (
+export const uploadMedia = async (
   userId: string,
   mediaUri: string,
   mediaType: 'image' | 'video',
+  caption: string,
   onProgress?: (progress: number) => void
-): Promise<Story> => {
+): Promise<Post> => {
   try {
-    // Create a unique filename
-    const timestamp = new Date().getTime();
+    const timestamp = Date.now();
     const fileExtension = mediaType === 'image' ? 'jpg' : 'mp4';
-    const filename = `stories/${userId}/${timestamp}.${fileExtension}`;
+    const filename = `posts/${userId}/${timestamp}.${fileExtension}`;
     const storageRef = ref(storage, filename);
 
     // Handle file:// URIs by converting to blob and using uploadBytes
@@ -59,41 +37,32 @@ export const uploadStory = async (
 
     // Upload the blob using uploadBytes
     await uploadBytes(storageRef, blob, metadata);
-    
-    // Simulate progress for consistency
-    if (onProgress) {
-      onProgress(100);
-    }
 
-    // Get download URL
+    if (onProgress) onProgress(100);
+
     const downloadURL = await getDownloadURL(storageRef);
 
-    // Create story document in Firestore
-    const storyData = {
+    const postData = {
       userId,
-      mediaUrl: downloadURL,
-      type: mediaType,
+      imageUrl: mediaType === 'image' ? downloadURL : null,
+      videoUrl: mediaType === 'video' ? downloadURL : null,
+      caption,
+      likes: [],
+      comments: [],
       createdAt: serverTimestamp(),
-      seenBy: [],
-      duration: mediaType === 'video' ? 15 : 5, // 15s for videos, 5s for images
+      updatedAt: serverTimestamp(),
     };
 
-    const docRef = await addDoc(collection(db, 'stories'), storyData);
+    const docRef = await addDoc(collection(db, 'posts'), postData);
 
     return {
       id: docRef.id,
-      ...storyData,
+      ...postData,
       createdAt: new Date(),
-    } as Story;
+      updatedAt: new Date(),
+    } as Post;
   } catch (error) {
     console.error('Upload error:', error);
     throw error;
   }
 };
-
-const StoryUtils = {
-  pickStoryMedia,
-  uploadStory,
-};
-
-export default StoryUtils; 

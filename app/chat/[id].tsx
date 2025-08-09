@@ -128,7 +128,7 @@ export default function ChatRoomScreen() {
             setParticipant({
               id: otherParticipantId,
               name: userData.name || 'Anonymous',
-              photo: userData.photos?.[0],
+              photo: userData.profilePicture || userData.photos?.[0] || 'https://example.com/default-profile-picture.jpg',
               online: false, // You would need a separate online status system
               lastSeen: userData.lastLoginAt,
             });
@@ -384,6 +384,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     backgroundColor: '#2a2a2a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#3a3a3a',
   },
   backButton: {
     marginRight: 16,
@@ -395,16 +397,21 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: '600',
+    marginBottom: 2,
   },
   headerStatus: {
     color: '#666',
     fontSize: 12,
+    marginTop: 2,
   },
   headerStatusOnline: {
     color: '#4CAF50',
   },
   headerButton: {
     marginLeft: 16,
+    padding: 8,
+    backgroundColor: '#3a3a3a',
+    borderRadius: 20,
   },
   messagesList: {
     padding: 16,
@@ -414,6 +421,14 @@ const styles = StyleSheet.create({
     marginVertical: 4,
     padding: 12,
     borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   ownMessage: {
     alignSelf: 'flex-end',
@@ -428,6 +443,7 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     marginBottom: 4,
+    lineHeight: 20,
   },
   ownMessageText: {
     color: 'white',
@@ -439,6 +455,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 150,
     borderRadius: 8,
+    resizeMode: 'cover',
   },
   messageTime: {
     fontSize: 10,
@@ -456,6 +473,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     backgroundColor: '#2a2a2a',
+    borderTopWidth: 1,
+    borderTopColor: '#3a3a3a',
   },
   attachButton: {
     padding: 8,
@@ -463,15 +482,19 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     marginHorizontal: 8,
-    padding: 8,
+    padding: 10,
     maxHeight: 100,
     color: 'white',
     fontSize: 16,
+    backgroundColor: '#3a3a3a',
+    borderRadius: 20,
   },
   sendButton: {
-    padding: 8,
+    padding: 10,
     backgroundColor: '#FF4B6A',
     borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sendButtonDisabled: {
     backgroundColor: '#666',

@@ -9,11 +9,13 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './context/AuthContext';
 import { router } from 'expo-router';
 import { markNotificationAsRead, markAllNotificationsAsRead, NotificationWithUser, NotificationType, createNotification } from './utils/notifications';
+import { createOrGetChatRoom } from './utils/chat';
 import { formatDistanceToNow } from 'date-fns';
 import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { db } from './config/firebase';
@@ -29,9 +31,10 @@ const FILTERS = [
 ];
 
 export default function NotificationsScreen() {
-  const { user, notifications, refreshNotifications } = useAuth();
+  const { user, userData, notifications, refreshNotifications } = useAuth();
   const [activeFilter, setActiveFilter] = useState('all');
   const [loading, setLoading] = useState(false);
+  const [followingUsers, setFollowingUsers] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const markAllAsRead = async () => {
@@ -104,16 +107,35 @@ export default function NotificationsScreen() {
     if (!user) return;
 
     try {
+      // Update local state immediately for UI feedback
+      setFollowingUsers(prev => ({ ...prev, [targetUserId]: true }));
+
       // Get current user document
       const currentUserRef = doc(db, 'users', user.uid);
       const currentUserDoc = await getDoc(currentUserRef);
       
-      if (!currentUserDoc.exists()) return;
+      if (!currentUserDoc.exists()) {
+        // Revert local state if operation fails
+        setFollowingUsers(prev => {
+          const newState = { ...prev };
+          delete newState[targetUserId];
+          return newState;
+        });
+        return;
+      }
       
       const currentUserData = currentUserDoc.data();
       const isAlreadyFollowing = currentUserData.following?.includes(targetUserId);
       
-      if (isAlreadyFollowing) return; // Already following
+      if (isAlreadyFollowing) {
+        // Revert local state if already following
+        setFollowingUsers(prev => {
+          const newState = { ...prev };
+          delete newState[targetUserId];
+          return newState;
+        });
+        return; // Already following
+      }
 
       // Update current user's following list
       await updateDoc(currentUserRef, {
@@ -136,6 +158,32 @@ export default function NotificationsScreen() {
       await refreshNotifications();
     } catch (error) {
       console.error('Error following user:', error);
+      // Revert local state on error
+      setFollowingUsers(prev => {
+        const newState = { ...prev };
+        delete newState[targetUserId];
+        return newState;
+      });
+    }
+  };
+
+  const handleMessageFromNotification = async (userId: string) => {
+    if (!user) return;
+    try {
+      if (userId === user.uid) return;
+      
+      const chatRoomId = await createOrGetChatRoom(user.uid, userId);
+      router.push({
+        pathname: '/chat/[id]',
+        params: { id: chatRoomId }
+      });
+    } catch (error) {
+      console.error('Error starting chat from notification:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to start chat. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -231,14 +279,16 @@ export default function NotificationsScreen() {
               onPress={() => handleFollowBack(item.user.id, item.notification.type === 'follow')}
             >
               <Text style={styles.actionButtonText}>
-                {item.notification.type === 'follow' ? 'Follow Back' : 'Follow'}
+                {followingUsers[item.user.id] || (userData?.following?.includes(item.user.id) ?? false) 
+                  ? 'Following' 
+                  : (item.notification.type === 'follow' ? 'Follow Back' : 'Follow')}
               </Text>
             </TouchableOpacity>
           ) : null}
           {item.notification.type === 'match' && (
             <TouchableOpacity 
               style={styles.actionButton}
-              onPress={() => router.push(`/chat/${item.user.id}`)}
+              onPress={() => handleMessageFromNotification(item.user.id)}
             >
               <Text style={styles.actionButtonText}>Message</Text>
             </TouchableOpacity>

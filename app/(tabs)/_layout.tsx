@@ -28,6 +28,7 @@ export default function TabLayout() {
           borderTopColor: '#333',
           backgroundColor: '#1a1a1a',
           height: 60,
+          position: 'absolute',
           paddingBottom: 8,
           paddingTop: 8,
         },
@@ -43,7 +44,7 @@ export default function TabLayout() {
               style={styles.notificationButton}
               onPress={handleNotificationPress}
             >
-              <Ionicons name="heart-outline" size={24} color="#fff" />
+              <Ionicons name="notifications-outline" size={24} color="#fff" />
               {unreadNotificationsCount > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>
@@ -68,11 +69,13 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="matches"
         options={{
           title: 'Matches',
           headerTitle: 'Your Matches',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="heart-outline" size={size} color={color} />
           ),

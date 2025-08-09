@@ -39,7 +39,7 @@ export default function CheckoutPage({
   onPaymentSuccess,
 }: CheckoutPageProps) {
   const [couponCode, setCouponCode] = useState('');
-  const [upiId, setUpiId] = useState('');
+  const [upiId, setUpiId] = useState(''); // Kept for backward compatibility, but not used with Razorpay
   const [appliedCoupon, setAppliedCoupon] = useState<CouponCode | null>(null);
   const [checkoutData, setCheckoutData] = useState<CheckoutData>({
     planId: selectedPlan.id,
@@ -173,23 +173,7 @@ export default function CheckoutPage({
     });
   };
 
-  const validateUPI = (upi: string): boolean => {
-    // Basic UPI ID validation
-    const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
-    return upiRegex.test(upi);
-  };
-
   const processPayment = async () => {
-    if (!upiId.trim()) {
-      Alert.alert('Error', 'Please enter your UPI ID');
-      return;
-    }
-
-    if (!validateUPI(upiId.trim())) {
-      Alert.alert('Error', 'Please enter a valid UPI ID (e.g., user@paytm)');
-      return;
-    }
-
     setPaymentProcessing(true);
     try {
       console.log('💳 Processing Razorpay payment for checkout:', checkoutData);
@@ -202,7 +186,6 @@ export default function CheckoutPage({
         originalAmount: checkoutData.originalAmount,
         discountAmount: checkoutData.discountAmount,
         couponCode: appliedCoupon?.code,
-        upiId: upiId.trim(),
       };
 
       // Create payment order
@@ -223,7 +206,7 @@ export default function CheckoutPage({
       // Process payment with Razorpay
       const userDetails = {
         name: 'User', // You might want to get this from user context
-        email: upiId.includes('@') ? upiId : `${upiId}@example.com`,
+        email: 'user@example.com', // You might want to get this from user context
         contact: '9999999999', // You might want to get this from user context
       };
 
@@ -416,21 +399,17 @@ export default function CheckoutPage({
             )}
           </View>
 
-          {/* UPI Payment Section */}
+          {/* Razorpay Payment Section */}
           <View style={styles.paymentSection}>
             <Text style={styles.sectionTitle}>Payment Details</Text>
             <View style={styles.upiContainer}>
-              <Text style={styles.upiLabel}>UPI ID</Text>
-              <TextInput
-                style={styles.upiInput}
-                placeholder="Enter your UPI ID (e.g., user@paytm)"
-                value={upiId}
-                onChangeText={setUpiId}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
+              <Text style={styles.upiLabel}>Payment Method</Text>
+              <View style={styles.paymentMethodContainer}>
+                <Ionicons name="card" size={24} color="#FF4B6A" />
+                <Text style={styles.paymentMethodText}>Razorpay Secure Payment</Text>
+              </View>
               <Text style={styles.upiHint}>
-                Enter your UPI ID to receive payment request
+                You will be redirected to Razorpay to complete your payment securely
               </Text>
             </View>
           </View>
@@ -682,20 +661,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     borderRadius: 8,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  upiHint: {
-    fontSize: 12,
-    color: '#666',
-  },
-  footer: {
-    padding: 20,
-    backgroundColor: '#FFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
   },
   payButton: {
     borderRadius: 12,

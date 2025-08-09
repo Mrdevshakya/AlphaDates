@@ -276,9 +276,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         createdAt: serverTimestamp()
       });
 
+      // Set default profile picture if not provided
+      const profilePicture = userData.profilePicture || require('../../assets/images/profile-picture.png');
+      
       // Save user data to Firestore
       await setDoc(doc(db, 'users', user.uid), {
         ...userData,
+        profilePicture,
         email,
         displayName: userData.name,
         createdAt: new Date().toISOString(),
