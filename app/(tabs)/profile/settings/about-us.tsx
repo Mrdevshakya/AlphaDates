@@ -24,15 +24,15 @@ export default function AboutUsScreen() {
   };
 
   const handleEmailPress = () => {
-    Linking.openURL('mailto:info@alphadate.com');
+    Linking.openURL('mailto:info@alpha.date');
   };
 
   const handleSocialPress = (platform: string) => {
     const urls = {
-      instagram: 'https://instagram.com/alphadate',
-      twitter: 'https://twitter.com/alphadate',
-      facebook: 'https://facebook.com/alphadate',
-      linkedin: 'https://linkedin.com/company/alphadate',
+      instagram: 'https://instagram.com/alpha.date',
+      twitter: 'https://twitter.com/alpha.date',
+      facebook: 'https://facebook.com/alpha.date',
+      linkedin: 'https://linkedin.com/company/alpha.date',
     };
     Linking.openURL(urls[platform as keyof typeof urls]);
   };

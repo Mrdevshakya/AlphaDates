@@ -173,10 +173,7 @@ export default function NotificationsScreen() {
       if (userId === user.uid) return;
       
       const chatRoomId = await createOrGetChatRoom(user.uid, userId);
-      router.push({
-        pathname: '/chat/[id]',
-        params: { id: chatRoomId }
-      });
+      router.push(`/chats/chat/${chatRoomId}`);
     } catch (error) {
       console.error('Error starting chat from notification:', error);
       Alert.alert(
@@ -229,6 +226,8 @@ export default function NotificationsScreen() {
             return 'liked your video';
           } else if (item.notification.contentType === 'story') {
             return 'liked your story';
+          } else if (item.notification.contentType === 'profile') {
+            return 'liked your profile';
           } else {
             return 'liked your post';
           }
@@ -262,7 +261,14 @@ export default function NotificationsScreen() {
         </View>
         <View style={styles.notificationContent}>
           <View style={styles.userInfo}>
-            <Image source={{ uri: item.user.avatar }} style={styles.avatar} />
+            <Image 
+              source={{ 
+                uri: item.user.profilePictureBase64 ?
+                  `data:image/jpeg;base64,${item.user.profilePictureBase64}` :
+                  item.user.avatar 
+              }} 
+              style={styles.avatar} 
+            />
             <View style={styles.textContainer}>
               <Text style={styles.notificationText}>
                 <Text style={styles.username}>{item.user.name}</Text> {getNotificationContent()}

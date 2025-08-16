@@ -6,9 +6,9 @@ if (!RazorpayCheckout) {
 }
 import { SubscriptionPlan } from '../../src/types';
 
-// Razorpay configuration - Using the provided test keys
-const RAZORPAY_KEY_ID = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_cTXFkZcbQPdB0D';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'qGzx12RbqZRBYdDE1h6ezFMc';
+// Razorpay configuration - Using the provided live keys
+const RAZORPAY_KEY_ID = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_live_B8vdXmtPXebXES';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'XAJUSjTMfTTCu4Ee20s6qzWC';
 
 export interface RazorpayOrderData {
   orderId: string;
@@ -80,7 +80,7 @@ export class RazorpayService {
     try {
       // Check if RazorpayCheckout is available
       if (!RazorpayCheckout) {
-        throw new Error('Razorpay SDK not available. This is likely because react-native-razorpay requires native linking, which is not supported in Expo Go. Please use Expo Dev Client or EAS Build to create a development build.');
+        throw new Error('Razorpay payment gateway is not available. This is likely because react-native-razorpay requires native linking, which is not supported in Expo Go. Please use Expo Dev Client or EAS Build to create a development build.');
       }
       
       const options = {

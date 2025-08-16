@@ -39,8 +39,11 @@ export default function SplashScreen() {
         ]}
       >
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>Alpha</Text>
-          <Text style={styles.logoText}>Dates</Text>
+          <Image 
+            source={require('../../assets/images/Alphadate.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         <Text style={styles.tagline}>Find your perfect match</Text>
         <View style={styles.loadingDots}>
@@ -103,6 +106,10 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 4,
+  },
+  logoImage: {
+    width: 200,
+    height: 200,
   },
   tagline: {
     fontSize: 18,

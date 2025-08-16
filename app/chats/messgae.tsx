@@ -75,10 +75,26 @@ export default function ChatScreen() {
             const userDoc = await getDoc(doc(db, 'users', id));
             if (userDoc.exists()) {
               const userData = userDoc.data();
+              console.log('User data for participant:', id, userData);
+              
+              // Try multiple photo sources
+              let photoUrl = null;
+              if (userData.profilePictureBase64) {
+                photoUrl = `data:image/jpeg;base64,${userData.profilePictureBase64}`;
+              } else if (userData.profilePicture) {
+                photoUrl = userData.profilePicture;
+              } else if (userData.photos && userData.photos.length > 0) {
+                photoUrl = userData.photos[0];
+              } else if (userData.profilePhoto) {
+                photoUrl = userData.profilePhoto;
+              }
+              
+              console.log('Profile photo URL for', userData.name, ':', photoUrl);
+              
               participantsData[id] = {
                 id,
-                name: userData.name || 'Anonymous',
-                photo: userData.profilePicture || userData.photos?.[0],
+                name: userData.name || userData.displayName || 'Anonymous',
+                photo: photoUrl,
                 online: false, // You would need a separate online status system
                 lastSeen: userData.lastLoginAt,
               };
@@ -114,7 +130,7 @@ export default function ChatScreen() {
     if (!otherParticipantId) return;
 
     router.push({
-      pathname: '/chat/[id]',
+      pathname: '/chats/chat/[id]',
       params: { id: chatRoom.id }
     });
   };
@@ -144,10 +160,15 @@ export default function ChatScreen() {
       >
         <View style={styles.avatarContainer}>
           {participant.photo ? (
-            <Image source={{ uri: participant.photo }} style={styles.avatar} />
+            <Image 
+              source={{ uri: participant.photo }} 
+              style={styles.avatar}
+              onError={(error) => console.log('Chat list image load error:', error)}
+              onLoad={() => console.log('Chat list image loaded:', participant.photo)}
+            />
           ) : (
             <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{participant.name[0]}</Text>
+              <Text style={styles.avatarText}>{participant.name[0]?.toUpperCase() || '?'}</Text>
             </View>
           )}
           {isOnline && <View style={styles.onlineIndicator} />}

@@ -33,6 +33,7 @@ import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { pickStoryMedia, uploadStory } from '../../utils/stories';
+import PostDetailModal from '../../components/PostDetailModal';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 40) / 3;
@@ -53,6 +54,8 @@ export default function ProfileScreen() {
   const [posts, setPosts] = useState<Array<{ post: any; user: UserProfile }>>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [selectedPostIndex, setSelectedPostIndex] = useState(0);
   
   useEffect(() => {
     if (!user) return;
@@ -309,10 +312,7 @@ export default function ProfileScreen() {
 
     try {
       const chatRoomId = await createOrGetChatRoom(user.uid, userId);
-      router.push({
-        pathname: '/chat/[id]',
-        params: { id: chatRoomId }
-      });
+      router.push(`/chats/chat/${chatRoomId}`);
     } catch (error) {
       console.error('Error starting chat:', error);
       Alert.alert(
@@ -380,10 +380,114 @@ export default function ProfileScreen() {
     }
   };
 
-  const renderPost = ({ item }: { item: { post: any; user: UserProfile } }) => (
-    <TouchableOpacity style={styles.photoContainer}>
+  const handlePostPress = (index: number) => {
+    setSelectedPostIndex(index);
+    setShowPostModal(true);
+  };
+
+  const handleLike = async (postId: string) => {
+    if (!user) return;
+
+    try {
+      const postRef = doc(db, 'posts', postId);
+      
+      // Find the current post to check if user has already liked it
+      const currentPost = posts.find(item => item.post.id === postId);
+      if (!currentPost) return;
+      
+      const isLiked = (currentPost.post.likes || []).includes(user.uid);
+      
+      if (isLiked) {
+        // Unlike the post
+        await updateDoc(postRef, {
+          likes: arrayRemove(user.uid)
+        });
+        
+        // Update local state - remove like
+        setPosts(currentPosts => 
+          currentPosts.map(item => 
+            item.post.id === postId
+              ? {
+                  ...item,
+                  post: {
+                    ...item.post,
+                    likes: (item.post.likes || []).filter(uid => uid !== user.uid)
+                  }
+                }
+              : item
+          )
+        );
+      } else {
+        // Like the post
+        await updateDoc(postRef, {
+          likes: arrayUnion(user.uid)
+        });
+        
+        // Update local state - add like
+        setPosts(currentPosts => 
+          currentPosts.map(item => 
+            item.post.id === postId
+              ? {
+                  ...item,
+                  post: {
+                    ...item.post,
+                    likes: [...(item.post.likes || []), user.uid]
+                  }
+                }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+    }
+  };
+
+  const handleComment = async (postId: string, comment: string) => {
+    if (!user || !userData) return;
+
+    try {
+      const postRef = doc(db, 'posts', postId);
+      const newComment = {
+        id: Date.now().toString(),
+        userId: user.uid,
+        username: userData.username || userData.name || 'Unknown User',
+        text: comment,
+        createdAt: new Date(),
+        likes: []
+      };
+
+      await updateDoc(postRef, {
+        comments: arrayUnion(newComment)
+      });
+
+      // Update local state
+      setPosts(currentPosts =>
+        currentPosts.map(item =>
+          item.post.id === postId
+            ? {
+                ...item,
+                post: {
+                  ...item.post,
+                  comments: [...(item.post.comments || []), newComment]
+                }
+              }
+            : item
+        )
+      );
+    } catch (error) {
+      console.error('Error adding comment:', error);
+    }
+  };
+
+  const renderPost = ({ item, index }: { item: { post: any; user: UserProfile }; index: number }) => (
+    <TouchableOpacity 
+      style={styles.photoContainer}
+      onPress={() => handlePostPress(index)}
+      activeOpacity={0.8}
+    >
       <Image 
-        source={{ uri: item.post.imageUrl || item.post.videoUrl }} 
+        source={{ uri: item.post.imageBase64 || item.post.imageUrl || item.post.videoUrl }} 
         style={styles.photo} 
       />
       {item.post.videoUrl && (
@@ -443,8 +547,10 @@ export default function ProfileScreen() {
             <View style={styles.profileImageContainer}>
               <Image
                 source={{ 
-                  uri: displayData.profilePicture || 
-                    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayData.name)}&background=random` 
+                  uri: displayData.profilePictureBase64 ? 
+                    `data:image/jpeg;base64,${displayData.profilePictureBase64}` :
+                    displayData.profilePicture || 
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayData.name)}&background=random`
                 }}
                 style={styles.profileImage}
               />
@@ -452,7 +558,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity 
                   style={styles.editPhotoButton} 
                   onPress={handleAddStory}
-                  disabled={uploading}
+                  disabled={true}
                 >
                   {uploading ? (
                     <View style={styles.uploadingContainer}>
@@ -493,7 +599,7 @@ export default function ProfileScreen() {
           {/* Profile Stats */}
           <View style={styles.statsContainer}>
             <TouchableOpacity style={styles.statItem}>
-              <Text style={styles.statNumber}>{displayData.posts?.length || 0}</Text>
+              <Text style={styles.statNumber}>{posts.length || 0}</Text>
               <Text style={styles.statLabel}>Posts</Text>
             </TouchableOpacity>
             <LinearGradient
@@ -597,7 +703,8 @@ export default function ProfileScreen() {
             {posts && posts.length > 0 ? (
               <FlatList
                 data={posts}
-                renderItem={renderPost}
+                renderItem={({ item, index }) => renderPost({ item, index })}
+                keyExtractor={(item) => item.post.id}
                 numColumns={3}
                 scrollEnabled={false}
                 style={styles.photosGrid}
@@ -688,6 +795,16 @@ export default function ProfileScreen() {
           />
         )}
       </Modal>
+
+      {/* Post Detail Modal */}
+      <PostDetailModal
+        visible={showPostModal}
+        posts={posts}
+        initialIndex={selectedPostIndex}
+        onClose={() => setShowPostModal(false)}
+        onLike={handleLike}
+        onComment={handleComment}
+      />
     </SafeAreaView>
   );
 }

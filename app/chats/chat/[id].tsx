@@ -13,9 +13,9 @@ import {
   Keyboard,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import usePresence from '../hooks/usePresence';
+import usePresence from '../../hooks/usePresence';
 import {
   collection,
   query,
@@ -30,8 +30,8 @@ import {
   getDocs,
   writeBatch,
 } from 'firebase/firestore';
-import { db, storage } from '../config/firebase';
-import { ChatMessage, ChatParticipant } from '../../src/types';
+import { db, storage } from '../../config/firebase';
+import { ChatMessage, ChatParticipant } from '../../../src/types';
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -125,10 +125,26 @@ export default function ChatRoomScreen() {
           const userDoc = await getDoc(doc(db, 'users', otherParticipantId));
           if (userDoc.exists()) {
             const userData = userDoc.data();
+            console.log('Chat participant data:', otherParticipantId, userData);
+            
+            // Try multiple photo sources
+            let photoUrl = null;
+            if (userData.profilePictureBase64) {
+              photoUrl = `data:image/jpeg;base64,${userData.profilePictureBase64}`;
+            } else if (userData.profilePicture) {
+              photoUrl = userData.profilePicture;
+            } else if (userData.photos && userData.photos.length > 0) {
+              photoUrl = userData.photos[0];
+            } else if (userData.profilePhoto) {
+              photoUrl = userData.profilePhoto;
+            }
+            
+            console.log('Chat participant photo URL:', photoUrl);
+            
             setParticipant({
               id: otherParticipantId,
-              name: userData.name || 'Anonymous',
-              photo: userData.profilePicture || userData.photos?.[0] || 'https://example.com/default-profile-picture.jpg',
+              name: userData.name || userData.displayName || 'Anonymous',
+              photo: photoUrl,
               online: false, // You would need a separate online status system
               lastSeen: userData.lastLoginAt,
             });
@@ -300,6 +316,21 @@ export default function ChatRoomScreen() {
           <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         
+        <View style={styles.profileContainer}>
+          {participant?.photo ? (
+            <Image 
+              source={{ uri: participant.photo }} 
+              style={styles.headerAvatar}
+              onError={(error) => console.log('Image load error:', error)}
+              onLoad={() => console.log('Image loaded successfully:', participant.photo)}
+            />
+          ) : (
+            <View style={[styles.headerAvatar, styles.headerAvatarPlaceholder]}>
+              <Text style={styles.headerAvatarText}>{participant?.name?.[0]?.toUpperCase() || '?'}</Text>
+            </View>
+          )}
+        </View>
+        
         <View style={styles.headerInfo}>
           <Text style={styles.headerName}>{participant?.name}</Text>
           <Text style={[
@@ -389,6 +420,24 @@ const styles = StyleSheet.create({
   },
   backButton: {
     marginRight: 16,
+  },
+  profileContainer: {
+    marginRight: 12,
+  },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF4B6A',
+  },
+  headerAvatarPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerAvatarText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   headerInfo: {
     flex: 1,

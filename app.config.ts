@@ -5,26 +5,25 @@ const config: ExpoConfig = {
   slug: 'alphadate',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/images/logo.png',
+  icon: './assets/images/Alphadate.png',
   userInterfaceStyle: 'light',
-  splash: {
-    image: './assets/images/splash-new.png',
-    resizeMode: 'contain',
-    backgroundColor: '#1a1a1a'
-  },
   assetBundlePatterns: [
     '**/*'
   ],
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.alphadate.app'
+    bundleIdentifier: 'com.alphadate.app',
+    infoPlist: {
+      UIKeyboardAppearance: 'light'
+    }
   },
   android: {
     adaptiveIcon: {
       foregroundImage: './assets/images/logo.png',
       backgroundColor: '#1a1a1a'
     },
-    package: 'com.alphadate.app'
+    package: 'com.alphadate.app',
+    softwareKeyboardLayoutMode: 'pan'
   },
   web: {
     favicon: './assets/images/logo.png'

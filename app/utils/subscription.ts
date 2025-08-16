@@ -427,6 +427,41 @@ export class SubscriptionService {
       throw error;
     }
   }
+
+  // Get user payment history
+  static async getUserPaymentHistory(userId: string): Promise<PaymentOrder[]> {
+    try {
+      console.log('💳 SubscriptionService: Fetching payment history for user:', userId);
+      
+      const paymentsRef = collection(db, 'paymentOrders');
+      const q = query(
+        paymentsRef,
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      
+      const snapshot = await getDocs(q);
+      console.log('📊 SubscriptionService: Found payment records:', snapshot.size);
+      
+      const paymentHistory = snapshot.docs.map(doc => {
+        const data = doc.data() as PaymentOrder;
+        // Convert Firestore timestamps to Date objects
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt instanceof Date ? data.createdAt : new Date(),
+          updatedAt: data.updatedAt instanceof Date ? data.updatedAt : new Date()
+        };
+      });
+      
+      console.log('✅ SubscriptionService: Payment history fetched successfully');
+      return paymentHistory;
+    } catch (error) {
+      console.error('❌ SubscriptionService: Error fetching payment history:', error);
+      return [];
+    }
+  }
 }
 
 // Create and export default instance

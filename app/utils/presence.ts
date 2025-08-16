@@ -11,7 +11,13 @@ const updateUserPresence = async (userId: string, isOnline: boolean) => {
       lastChanged: serverTimestamp(),
     });
   } catch (error) {
-    console.error('Error updating user presence:', error);
+    // Check if it's a permission error (user might be signed out)
+    if (error.code === 'permission-denied') {
+      console.warn('Permission denied updating user presence - user may be signed out');
+    } else {
+      console.error('Error updating user presence:', error);
+    }
+    throw error; // Re-throw so caller can handle appropriately
   }
 };
 

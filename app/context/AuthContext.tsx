@@ -387,10 +387,20 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      // Update presence to offline BEFORE signing out to avoid permission errors
       if (user) {
-        await presence.updateUserPresence(user.uid, false);
+        try {
+          await presence.updateUserPresence(user.uid, false);
+        } catch (presenceError) {
+          // Log but don't fail logout if presence update fails
+          console.warn('Failed to update presence on logout:', presenceError);
+        }
       }
+      
+      // Sign out from Firebase Auth
       await signOut(auth);
+      
+      // Clear local state
       setUser(null);
       setUserData(null);
     } catch (error) {

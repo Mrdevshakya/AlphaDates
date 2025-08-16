@@ -122,7 +122,9 @@ export default function FollowList({
             <View style={styles.avatarContainer}>
               <Image
                 source={{ 
-                  uri: item.profilePicture || 
+                  uri: item.profilePictureBase64 ? 
+                    `data:image/jpeg;base64,${item.profilePictureBase64}` :
+                    item.profilePicture || 
                     `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name)}&background=random` 
                 }}
                 style={styles.avatar}

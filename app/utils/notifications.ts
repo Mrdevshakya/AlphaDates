@@ -10,7 +10,7 @@ export interface Notification {
   userId: string; // ID of the user who triggered the notification
   targetUserId: string; // ID of the user who receives the notification
   contentId?: string; // ID of the post/video/comment/story
-  contentType?: 'post' | 'video' | 'comment' | 'story';
+  contentType?: 'post' | 'video' | 'comment' | 'story' | 'profile';
   message?: string;
   read: boolean;
   createdAt: Date;
@@ -147,7 +147,7 @@ export const createNotification = async (
   userId: string, // who is creating the notification
   targetUserId: string, // who will receive the notification
   contentId?: string,
-  contentType?: 'post' | 'video' | 'comment',
+  contentType?: 'post' | 'video' | 'comment' | 'profile',
   message?: string
 ): Promise<void> => {
   // Don't create notification if user is notifying themselves
@@ -215,30 +215,47 @@ export const deleteNotificationsByContent = async (
   targetUserId: string, // who received the notification
   contentId?: string
 ): Promise<void> => {
-  const notificationsRef = collection(db, 'notifications');
-  
-  // Create query conditions
-  const conditions = [
-    where('type', '==', type),
-    where('userId', '==', userId),
-    where('targetUserId', '==', targetUserId)
-  ];
-  
-  // Add contentId condition if provided
-  if (contentId) {
-    conditions.push(where('contentId', '==', contentId));
+  // Validate required parameters
+  if (!type || !userId || !targetUserId) {
+    console.error('deleteNotificationsByContent: Missing required parameters', {
+      type,
+      userId,
+      targetUserId,
+      contentId
+    });
+    return;
   }
-  
-  const q = query(notificationsRef, ...conditions);
-  const snapshot = await getDocs(q);
 
-  // Delete all matching notifications
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((doc) => {
-    batch.delete(doc.ref);
-  });
-  
-  await batch.commit();
+  try {
+    const notificationsRef = collection(db, 'notifications');
+    
+    // Create query conditions
+    const conditions = [
+      where('type', '==', type),
+      where('userId', '==', userId),
+      where('targetUserId', '==', targetUserId)
+    ];
+    
+    // Add contentId condition if provided and not undefined
+    if (contentId && contentId !== undefined) {
+      conditions.push(where('contentId', '==', contentId));
+    }
+    
+    const q = query(notificationsRef, ...conditions);
+    const snapshot = await getDocs(q);
+
+    // Delete all matching notifications
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    if (!snapshot.empty) {
+      await batch.commit();
+    }
+  } catch (error) {
+    console.error('Error deleting notifications:', error);
+  }
 }; 
 
 const NotificationUtils = {

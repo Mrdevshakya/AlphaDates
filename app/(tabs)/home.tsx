@@ -12,14 +12,14 @@ import {
   StatusBar,
   Animated,
   ListRenderItem,
-  PanResponder,
+  // PanResponder, // Disabled for swipe camera functionality
   Dimensions,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import Stories from '../components/Stories';
+// import Stories from '../components/Stories'; // Disabled story functionality
 import Post from '../components/Post';
-import { Post as PostType, Story, UserProfile, User } from '../../src/types';
-import { collection, query, where, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, DocumentData, Timestamp, limit } from 'firebase/firestore';
+import { Post as PostType, UserProfile, User } from '../../src/types';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, DocumentData, Timestamp, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,9 +35,9 @@ interface PostWithUser {
 }
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const [posts, setPosts] = useState<PostWithUser[]>([]);
-  const [stories, setStories] = useState<Array<{story: Story; user: UserProfile}>>([]);
+  // const [stories, setStories] = useState<Array<{story: Story; user: UserProfile}>>([]);  // Disabled story functionality
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [indexBuildError, setIndexBuildError] = useState<string | null>(null);
@@ -46,37 +46,38 @@ export default function HomeScreen() {
   const router = useRouter();
   const [hasNavigated, setHasNavigated] = useState(false);
   
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: (evt, gestureState) => {
-        // Increased edge detection area to 80px for faster response
-        return evt.nativeEvent.pageX < 80;
-      },
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Set responder if it's a horizontal swipe from left edge
-        return evt.nativeEvent.pageX < 80 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
-      },
-      onPanResponderGrant: () => {
-        // Reset navigation flag when gesture starts
-        setHasNavigated(false);
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        // Check if it's a right swipe (positive dx) and predominantly horizontal
-        // Reduced threshold for faster response: 40px instead of 60px
-        if (!hasNavigated && gestureState.dx > 40 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) {
-          setHasNavigated(true);
-          // Navigate to camera screen instantly (as modal without tab bar)
-          router.push('/camera');
-        }
-      },
-      onPanResponderRelease: () => {
-        // Reset navigation flag
-        setHasNavigated(false);
-      },
-      onPanResponderTerminationRequest: () => false, // Don't allow termination during gesture
-      onShouldBlockNativeResponder: () => false, // Don't block native responders
-    })
-  ).current;
+  // Disabled left swipe camera functionality
+  // const panResponder = useRef(
+  //   PanResponder.create({
+  //     onStartShouldSetPanResponder: (evt, gestureState) => {
+  //       // Increased edge detection area to 80px for faster response
+  //       return evt.nativeEvent.pageX < 80;
+  //     },
+  //     onMoveShouldSetPanResponder: (evt, gestureState) => {
+  //       // Set responder if it's a horizontal swipe from left edge
+  //       return evt.nativeEvent.pageX < 80 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+  //     },
+  //     onPanResponderGrant: () => {
+  //       // Reset navigation flag when gesture starts
+  //       setHasNavigated(false);
+  //     },
+  //     onPanResponderMove: (evt, gestureState) => {
+  //       // Check if it's a right swipe (positive dx) and predominantly horizontal
+  //       // Reduced threshold for faster response: 40px instead of 60px
+  //       if (!hasNavigated && gestureState.dx > 40 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) {
+  //         setHasNavigated(true);
+  //         // Navigate to camera screen instantly (as modal without tab bar)
+  //         router.push('/camera');
+  //       }
+  //     },
+  //     onPanResponderRelease: () => {
+  //       // Reset navigation flag
+  //       setHasNavigated(false);
+  //     },
+  //     onPanResponderTerminationRequest: () => false, // Don't allow termination during gesture
+  //     onShouldBlockNativeResponder: () => false, // Don't block native responders
+  //   })
+  // ).current;
 
   const renderItem: ListRenderItem<PostWithUser> = ({ item }) => (
     <Post
@@ -84,6 +85,7 @@ export default function HomeScreen() {
       user={item.user}
       onLike={handleLike}
       onComment={handleComment}
+      onDeleteComment={handleDeleteComment}
     />
   );
 
@@ -100,65 +102,19 @@ export default function HomeScreen() {
       const userData = userDocSnap.data() as DocumentData | undefined;
       const following = userData?.following || [];
 
-      // Fetch stories from the last 24 hours
-      const oneDayAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      // Disabled story fetching functionality
+      // const oneDayAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
       
-      try {
-        // Fetch user's own stories
-        const userStoriesQuery = query(
-          collection(db, 'stories'),
-          where('userId', '==', user.uid),
-          where('createdAt', '>', oneDayAgo),
-          orderBy('createdAt', 'desc')
-        );
+      // try {
+      //   // Fetch user's own stories
+      //   const userStoriesQuery = query(
+      //     collection(db, 'stories'),
+      //     where('userId', '==', user.uid),
+      //     where('createdAt', '>', oneDayAgo),
+      //     orderBy('createdAt', 'desc')
+      //   );
 
-        const userStoriesSnapshot = await getDocs(userStoriesQuery);
-        const userStoriesData = userStoriesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt.toDate()
-        })) as Story[];
-
-        // Fetch stories for each followed user
-        const followedStoriesData = await Promise.all(
-          following.map(async (followedId: string) => {
-            const followedStoriesQuery = query(
-              collection(db, 'stories'),
-              where('userId', '==', followedId),
-              where('createdAt', '>', oneDayAgo),
-              orderBy('createdAt', 'desc')
-            );
-            const snapshot = await getDocs(followedStoriesQuery);
-            return snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data(),
-              createdAt: doc.data().createdAt.toDate()
-            })) as Story[];
-          })
-        );
-
-        // Combine and flatten all stories
-        const allStories = [...userStoriesData, ...followedStoriesData.flat()];
-
-        // Fetch user data for stories
-        const storiesWithUsers = await Promise.all(
-          allStories.map(async (story) => {
-            const userDocRef = doc(db, 'users', story.userId);
-            const userDocSnap = await getDoc(userDocRef);
-            const userData = { id: userDocSnap.id, ...userDocSnap.data() } as UserProfile;
-            return { story, user: userData };
-          })
-        );
-
-        setStories(storiesWithUsers);
-      } catch (error: any) {
-        if (error?.message?.includes('index')) {
-          const indexUrl = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/)?.[0];
-          setIndexBuildError(indexUrl || 'Waiting for database indexes to build...');
-        }
-        console.error('Error fetching stories:', error);
-      }
-
+      //   const userStoriesSnapshot = await getDocs(userStoriesQuery);
       try {
         // Fetch posts similarly
         const userPostsQuery = query(
@@ -237,37 +193,68 @@ export default function HomeScreen() {
 
     try {
       const postRef = doc(db, 'posts', postId);
-      await updateDoc(postRef, {
-        likes: arrayUnion(user.uid)
-      });
       
-      // Update local state
-      setPosts(currentPosts => 
-        currentPosts.map(item => 
-          item.post.id === postId
-            ? {
-                ...item,
-                post: {
-                  ...item.post,
-                  likes: [...item.post.likes, user.uid]
+      // Find the current post to check if user has already liked it
+      const currentPost = posts.find(item => item.post.id === postId);
+      if (!currentPost) return;
+      
+      const isLiked = (currentPost.post.likes || []).includes(user.uid);
+      
+      if (isLiked) {
+        // Unlike the post
+        await updateDoc(postRef, {
+          likes: arrayRemove(user.uid)
+        });
+        
+        // Update local state - remove like
+        setPosts(currentPosts => 
+          currentPosts.map(item => 
+            item.post.id === postId
+              ? {
+                  ...item,
+                  post: {
+                    ...item.post,
+                    likes: (item.post.likes || []).filter(uid => uid !== user.uid)
+                  }
                 }
-              }
-            : item
-        )
-      );
+              : item
+          )
+        );
+      } else {
+        // Like the post
+        await updateDoc(postRef, {
+          likes: arrayUnion(user.uid)
+        });
+        
+        // Update local state - add like
+        setPosts(currentPosts => 
+          currentPosts.map(item => 
+            item.post.id === postId
+              ? {
+                  ...item,
+                  post: {
+                    ...item.post,
+                    likes: [...(item.post.likes || []), user.uid]
+                  }
+                }
+              : item
+          )
+        );
+      }
     } catch (error) {
-      console.error('Error liking post:', error);
+      console.error('Error toggling like:', error);
     }
   };
 
   const handleComment = async (postId: string, comment: string) => {
-    if (!user) return;
+    if (!user || !userData) return;
 
     try {
       const postRef = doc(db, 'posts', postId);
       const newComment = {
         id: Date.now().toString(),
         userId: user.uid,
+        username: userData.username || userData.name || 'Unknown User',
         text: comment,
         createdAt: new Date(),
         likes: []
@@ -296,57 +283,60 @@ export default function HomeScreen() {
     }
   };
 
-  const handleStoryPress = (storyId: string) => {
-    // Navigate to story viewer
-    // This will be implemented later
-    console.log('View story:', storyId);
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    if (!user || !userData) return;
+
+    try {
+      const postRef = doc(db, 'posts', postId);
+      
+      // Find the comment to delete
+      const postDoc = await getDoc(postRef);
+      if (!postDoc.exists()) return;
+      
+      const postData = postDoc.data();
+      const comments = postData.comments || [];
+      const commentToDelete = comments.find((c: any) => c.id === commentId);
+      
+      if (!commentToDelete) return;
+      
+      // Only allow deletion of own comments
+      if (commentToDelete.userId !== user.uid) {
+        console.error('User can only delete their own comments');
+        return;
+      }
+
+      // Remove the comment from Firestore
+      await updateDoc(postRef, {
+        comments: arrayRemove(commentToDelete)
+      });
+
+      // Update local state
+      setPosts(currentPosts =>
+        currentPosts.map(item =>
+          item.post.id === postId
+            ? {
+                ...item,
+                post: {
+                  ...item.post,
+                  comments: item.post.comments.filter(c => c.id !== commentId)
+                }
+              }
+            : item
+        )
+      );
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    }
   };
 
-  const renderHeader = () => {
-    const headerOpacity = scrollY.interpolate({
-      inputRange: [0, 50],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
+  // Disabled story press handler
+  // const handleStoryPress = (storyId: string) => {
+  //   // Navigate to story viewer
+  //   // This will be implemented later
+  //   console.log('View story:', storyId);
+  // };
 
-    const unreadNotifications = (user as User)?.userData?.unreadNotifications || 0;
-    const unreadMessages = (user as User)?.userData?.unreadMessages || 0;
-
-    return (
-      <Animated.View style={[
-        styles.header,
-        { opacity: headerOpacity, paddingTop: insets.top }
-      ]}>
-        <BlurView intensity={30} tint="dark" style={styles.headerBlur}>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>AlphaDate</Text>
-            <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="heart-outline" size={24} color="white" />
-                {unreadNotifications > 0 && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationText}>
-                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="chatbubble-outline" size={24} color="white" />
-                {unreadMessages > 0 && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationText}>
-                      {unreadMessages > 99 ? '99+' : unreadMessages}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </BlurView>
-      </Animated.View>
-    );
-  };
+  // Header removed as requested
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -420,18 +410,14 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      {renderHeader()}
       <AnimatedFlatList
         data={posts}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         ListHeaderComponent={() => (
-          <Stories
-            stories={stories}
-            onStoryPress={handleStoryPress}
-          />
+          <View style={{ height: 10 }} />
         )}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}

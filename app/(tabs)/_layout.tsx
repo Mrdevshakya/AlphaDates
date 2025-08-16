@@ -32,6 +32,7 @@ export default function TabLayout() {
           paddingBottom: 8,
           paddingTop: 8,
         },
+        tabBarHideOnKeyboard: false,
       }}
     >
       <Tabs.Screen
@@ -40,19 +41,34 @@ export default function TabLayout() {
           title: 'Home',
           headerTitle: 'AlphaDate',
           headerRight: () => (
-            <TouchableOpacity 
-              style={styles.notificationButton}
-              onPress={handleNotificationPress}
-            >
-              <Ionicons name="notifications-outline" size={24} color="#fff" />
-              {unreadNotificationsCount > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>
-                    {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity 
+                style={styles.notificationButton}
+                onPress={handleNotificationPress}
+              >
+                <Ionicons name="notifications-outline" size={24} color="#fff" />
+                {unreadNotificationsCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={{ marginRight: 15 }}
+                onPress={() => router.push('/chats/messgae')}
+              >
+                <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+                {unreadMessagesCount > 0 && (
+                  <View style={styles.chatBadge}>
+                    <Text style={styles.chatBadgeText}>
+                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           ),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
@@ -71,6 +87,17 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="add-post"
+        options={{
+          title: 'Add Post',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="add" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="matches"
         options={{
           title: 'Matches',
@@ -81,25 +108,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          headerTitle: 'Messages',
-          tabBarIcon: ({ color, size }) => (
-            <View>
-              <Ionicons name="chatbubbles" size={size} color={color} />
-              {unreadMessagesCount > 0 && (
-                <View style={styles.badgeContainer}>
-                  <Text style={styles.badgeText}>
-                    {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ),
-        }}
-      />
+
       <Tabs.Screen
         name="profile"
         options={{
@@ -149,6 +158,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   notificationBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  chatBadge: {
+    position: 'absolute',
+    right: -12,
+    top: -3,
+    backgroundColor: '#FF4B6A',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  chatBadgeText: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',

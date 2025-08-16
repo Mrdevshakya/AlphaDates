@@ -103,26 +103,16 @@ service cloud.firestore {
     // Username reservations
     match /usernames/{username} {
       allow read: if true;
-      allow create, update: if isSignedIn() && 
-        request.resource.data.uid == request.auth.uid &&
-        isUsernameUnique(username);
-      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create, update: if request.auth != null;
+      allow delete: if request.auth != null;
     }
 
     // User profiles
     match /users/{userId} {
       allow read: if true;
-      allow create: if isSignedIn() && isOwner(userId) && 
-        isUsernameUnique(request.resource.data.username);
-      allow update: if isSignedIn() && (
-        (isOwner(userId) && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['username']) ||
-          isUsernameUnique(request.resource.data.username)
-        )) || 
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['following', 'followers', 'blockedUsers'])) ||
-        isAdmin()
-      );
-      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     // User Reports
@@ -199,6 +189,26 @@ service cloud.firestore {
         isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.userId) ||
         isAdmin()
       );
+    }
+
+    // Allow public read access to basic user data
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Allow authentication operations
+    match /usernames/{username} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Other collections will be restricted
+    match /{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
   }
 } 

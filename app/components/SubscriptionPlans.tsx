@@ -15,7 +15,7 @@ import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SubscriptionService } from '../utils/subscription';
 import { SubscriptionPlan, UserSubscription } from '../../src/types';
-import CheckoutPage from './CheckoutPage';
+import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -32,11 +32,10 @@ export default function SubscriptionPlans({
   onClose,
   onSubscriptionSuccess
 }: SubscriptionPlansProps) {
+  const router = useRouter();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showPayment, setShowPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Animation values
@@ -150,25 +149,33 @@ export default function SubscriptionPlans({
     }
   };
 
-  const handlePlanSelect = (plan: SubscriptionPlan) => {
-    setSelectedPlan(plan);
-    setShowPayment(true);
+  const handlePlanSelect = async (plan: SubscriptionPlan) => {
+    if (!userId) {
+      Alert.alert('Authentication Required', 'Please log in to continue');
+      return;
+    }
+
+    try {
+      // Navigate to the payment checkout screen
+      router.push({
+        pathname: '/payment/checkout',
+        params: { 
+          planId: plan.id,
+          planName: plan.name,
+          planPrice: plan.price.toString(),
+          planDuration: plan.duration.toString(),
+          userId: userId
+        }
+      });
+    } catch (error) {
+      console.error('Error selecting plan:', error);
+      Alert.alert('Error', 'Failed to select plan. Please try again.');
+    }
   };
 
-  const handlePaymentSuccess = async () => {
-    setShowPayment(false);
-    setSelectedPlan(null);
-    
-    // Reload current subscription to reflect the new subscription
-    await loadCurrentSubscription();
-    
+  const handlePaymentSuccess = () => {
+    // This function might be called from navigation events
     onSubscriptionSuccess();
-    onClose();
-  };
-
-  const handlePaymentError = (error: string) => {
-    Alert.alert('Payment Failed', error);
-    setShowPayment(false);
   };
 
   const renderPlanCard = (plan: SubscriptionPlan, index: number) => {
@@ -360,16 +367,7 @@ export default function SubscriptionPlans({
           )}
         </ScrollView>
 
-        {/* Checkout Page */}
-        {selectedPlan && (
-          <CheckoutPage
-            visible={showPayment}
-            onClose={() => setShowPayment(false)}
-            selectedPlan={selectedPlan}
-            userId={userId}
-            onPaymentSuccess={handlePaymentSuccess}
-          />
-        )}
+        {/* Payment flow is now handled by navigation to /payment/checkout */}
       </View>
     </Modal>
   );

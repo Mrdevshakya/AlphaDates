@@ -527,10 +527,7 @@ export default function MatchesScreen() {
       if (userId === user.uid) return;
       
       const chatRoomId = await createOrGetChatRoom(user.uid, userId);
-      router.push({
-        pathname: '/chat/[id]',
-        params: { id: chatRoomId }
-      });
+      router.push(`/chats/chat/${chatRoomId}`);
     } catch (error) {
       console.error('Error starting chat:', error);
       Alert.alert(

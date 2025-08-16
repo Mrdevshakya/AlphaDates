@@ -14,9 +14,11 @@ import {
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../../config/firebase';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import Toast from '../../components/Toast';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -100,7 +102,18 @@ export default function EditProfileScreen() {
   };
 
   const handlePickImage = async () => {
+    if (!user || !userData) {
+      Alert.alert('Error', 'You must be logged in to change your profile picture');
+      return;
+    }
+
     try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Permission to access media library is required to change your profile picture');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -109,12 +122,48 @@ export default function EditProfileScreen() {
       });
 
       if (!result.canceled && result.assets[0].uri) {
-        // Handle image upload to storage and update profile picture URL
-        Alert.alert('Coming Soon', 'Image upload will be implemented soon!');
+        setLoading(true);
+
+        const mediaUri = result.assets[0].uri;
+        
+        let base64String: string;
+        
+        if (mediaUri.startsWith('file://')) {
+          base64String = await FileSystem.readAsStringAsync(mediaUri, { encoding: FileSystem.EncodingType.Base64 });
+        } else {
+          const response = await fetch(mediaUri);
+          const blob = await response.blob();
+          base64String = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          base64String = base64String.replace(/^data:image\/\w+;base64,/, '');
+        }
+        
+        console.log('Base64 string length:', base64String.length);
+        
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+          profilePictureBase64: base64String,
+          profilePicture: null,
+          updatedAt: new Date(),
+        });
+
+        setUserData({ ...userData, profilePictureBase64: base64String, profilePicture: null });
+        showSuccessToast('Profile picture updated successfully');
       }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    } catch (error: any) {
+      console.error('Error updating profile picture:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      let errorMessage = 'Failed to update profile picture. Please try again.';
+      if (error.message) {
+        errorMessage = `Update failed: ${error.message}`;
+      }
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 

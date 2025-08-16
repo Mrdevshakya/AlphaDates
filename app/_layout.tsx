@@ -1,11 +1,9 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import AuthProvider, { useAuth } from './context/AuthContext';
+import { PaymentProvider } from './context/PaymentContext';
 import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
-import * as SplashScreen from 'expo-splash-screen';
-import CustomSplashScreen from './components/SplashScreen';
 
-SplashScreen.preventAutoHideAsync();
 
 // Handle authentication routing
 function RootLayoutNav() {
@@ -70,34 +68,20 @@ export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
 
   useEffect(() => {
-    async function prepareResources() {
-      try {
-        // Add any additional resource loading here
-        // For now, we'll just wait a bit to show the splash screen
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (e) {
-        console.warn(e);
-      } finally {
-        setAppReady(true);
-      }
-    }
-
     if (fontsLoaded) {
-      SplashScreen.hideAsync();
+      setAppReady(true);
     }
-
-    if (!appReady) {
-      prepareResources();
-    }
-  }, [fontsLoaded, appReady]);
+  }, [fontsLoaded]);
 
   if (!fontsLoaded || !appReady) {
-    return <CustomSplashScreen />;
+    return null;
   }
 
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <PaymentProvider>
+        <RootLayoutNav />
+      </PaymentProvider>
     </AuthProvider>
   );
 }

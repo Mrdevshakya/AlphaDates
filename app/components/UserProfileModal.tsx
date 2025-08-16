@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { UserProfile } from '../../src/types';
 import { useAuth } from '../context/AuthContext';
 import { createNotification, deleteNotificationsByContent } from '../utils/notifications';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 interface UserProfileModalProps {
   isVisible: boolean;
@@ -40,8 +42,62 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
 }) => {
   const { userData, user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'photos' | 'likes'>('photos');
+  const [posts, setPosts] = useState<any[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const TRANSPARENT_PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn8B9f3rUQAAAABJRU5ErkJggg==';
+  
+  // Compute a safe string URI for the profile image
+  const getProfileImageUri = () => {
+    if (user && typeof user.profilePictureBase64 === 'string' && user.profilePictureBase64.length > 0) {
+      return `data:image/jpeg;base64,${user.profilePictureBase64}`;
+    }
+    if (user && typeof (user as any).profilePicture === 'string' && (user as any).profilePicture.trim().length > 0) {
+      return (user as any).profilePicture as string;
+    }
+    const displayName = user ? (user as any).name || (user as any).username || 'User' : 'User';
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`;
+  };
   
   const isFollowing = user ? userData?.following?.includes(user.id) || false : false;
+
+  // Fetch user posts when modal opens
+  useEffect(() => {
+    if (isVisible && user) {
+      fetchUserPosts();
+    }
+  }, [isVisible, user]);
+
+  const fetchUserPosts = async () => {
+    if (!user) return;
+    
+    setLoadingPosts(true);
+    try {
+      const postsQuery = query(
+        collection(db, 'posts'),
+        where('userId', '==', user.id),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const postsSnapshot = await getDocs(postsQuery);
+      const postsData = postsSnapshot.docs.map(doc => {
+        const postData = doc.data();
+        const mediaUrl = postData.imageBase64 || postData.imageUrl || postData.videoUrl;
+        const mediaType = (postData.imageBase64 || postData.imageUrl) ? 'image' : 'video';
+        return {
+          id: doc.id,
+          ...postData,
+          mediaUrl,
+          mediaType,
+        };
+      });
+      
+      setPosts(postsData);
+    } catch (error) {
+      console.error('Error fetching user posts:', error);
+    } finally {
+      setLoadingPosts(false);
+    }
+  };
 
   const handleFollowToggle = async () => {
     if (!user || !currentUser) return;
@@ -73,11 +129,21 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }
   };
 
-  const renderPhoto = ({ item }: { item: string }) => (
-    <TouchableOpacity style={styles.photoContainer}>
-      <Image source={{ uri: item }} style={styles.photo} />
-    </TouchableOpacity>
-  );
+  const renderPhoto = ({ item }: { item: any }) => {
+    const uri = typeof item?.mediaUrl === 'string' && item.mediaUrl.trim().length > 0
+      ? item.mediaUrl
+      : TRANSPARENT_PX;
+    return (
+      <TouchableOpacity style={styles.photoContainer}>
+        <Image source={{ uri }} style={styles.photo} />
+        {item.mediaType === 'video' && (
+          <View style={styles.videoIndicator}>
+            <Ionicons name="play" size={20} color="white" />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   if (!user) return null;
 
@@ -105,8 +171,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
               <View style={styles.profileImageContainer}>
                 <Image
                   source={{
-                    uri: user.profilePicture ||
-                      `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`
+                    uri: getProfileImageUri()
                   }}
                   style={styles.profileImage}
                 />
@@ -136,7 +201,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
               {/* Profile Stats */}
               <View style={styles.statsContainer}>
                 <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{user.posts?.length || 0}</Text>
+                  <Text style={styles.statNumber}>{posts.length}</Text>
                   <Text style={styles.statLabel}>Posts</Text>
                 </View>
                 <View style={styles.statDivider} />
@@ -202,9 +267,14 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
             {/* Tab Content */}
             {activeTab === 'photos' && (
               <View style={styles.photosContainer}>
-                {user.photos && user.photos.length > 0 ? (
+                {loadingPosts ? (
+                  <View style={styles.emptyState}>
+                    <ActivityIndicator size="large" color="#FF4B6A" />
+                    <Text style={styles.emptyStateText}>Loading posts...</Text>
+                  </View>
+                ) : posts.length > 0 ? (
                   <FlatList
-                    data={user.photos}
+                    data={posts}
                     renderItem={renderPhoto}
                     numColumns={3}
                     scrollEnabled={false}
@@ -213,8 +283,8 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   />
                 ) : (
                   <View style={styles.emptyState}>
-                    <Ionicons name="images-outline" size={48} color="#666" />
-                    <Text style={styles.emptyStateText}>No photos yet</Text>
+                    <Ionicons name="camera-outline" size={48} color="#666" />
+                    <Text style={styles.emptyStateText}>No posts yet</Text>
                   </View>
                 )}
               </View>
@@ -390,6 +460,15 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 8,
+  },
+  videoIndicator: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -10 }, { translateY: -10 }],
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 10,
+    padding: 6,
   },
   emptyState: {
     alignItems: 'center',

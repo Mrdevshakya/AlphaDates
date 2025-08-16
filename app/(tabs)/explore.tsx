@@ -13,9 +13,10 @@ import {
   Platform,
   Animated,
   ImageBackground,
-  Alert,
+  ToastAndroid,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -23,7 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { createOrGetChatRoom } from '../utils/chat';
 import { useAuth } from '../context/AuthContext';
-import { collection, query as firebaseQuery, where, getDocs, orderBy, limit, updateDoc, doc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query as firebaseQuery, where, getDocs, orderBy, limit, updateDoc, doc, getDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { UserProfile } from '../../src/types';
 import UserProfileModal from '../components/UserProfileModal';
@@ -125,6 +126,7 @@ export default function ExploreScreen() {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [likedProfiles, setLikedProfiles] = useState<Record<string, boolean>>({});
   
   // Create refs for card animations
   const cardAnimations = useRef(
@@ -201,10 +203,7 @@ export default function ExploreScreen() {
       }
       
       const chatRoomId = await createOrGetChatRoom(user.uid, userId);
-      router.push({
-        pathname: '/chat/[id]',
-        params: { id: chatRoomId }
-      });
+      router.push(`/chats/chat/${chatRoomId}`);
     } catch (error) {
       console.error('Error starting chat:', error);
       Alert.alert(
@@ -215,56 +214,130 @@ export default function ExploreScreen() {
     }
   };
 
-  // Search users function
+  // Search users and posts function
   const searchUsers = async (searchText: string) => {
     if (!searchText.trim()) {
       setUsers([]);
       return;
     }
 
+    // Validate user is logged in
+    if (!user?.uid) {
+      console.error('User not authenticated for search');
+      return;
+    }
+
     setLoading(true);
     try {
+      console.log('🔍 Starting user search for:', searchText);
+      
       const usersRef = collection(db, 'users');
-      const queryLower = searchText.toLowerCase();
+      const queryLower = searchText.toLowerCase().trim();
       
-      // Search by name or username
-      const nameQuery = firebaseQuery(usersRef, 
-        where('name', '>=', queryLower),
-        where('name', '<=', queryLower + '\uf8ff'),
-        limit(10)
-      );
-      
-      const usernameQuery = firebaseQuery(usersRef,
-        where('username', '>=', queryLower),
-        where('username', '<=', queryLower + '\uf8ff'),
-        limit(10)
-      );
-
-      const [nameSnapshot, usernameSnapshot] = await Promise.all([
-        getDocs(nameQuery),
-        getDocs(usernameQuery)
-      ]);
+      // Validate search query
+      if (queryLower.length < 2) {
+        console.log('Search query too short, skipping');
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
 
       const results = new Map<string, UserProfile>();
 
-      // Add name results
-      nameSnapshot.docs.forEach(doc => {
-        if (doc.id !== user?.uid) { // Exclude current user
-          results.set(doc.id, { id: doc.id, ...doc.data() } as UserProfile);
-        }
-      });
+      try {
+        // Search by username (safer approach)
+        console.log('🔍 Searching by username...');
+        const usernameQuery = firebaseQuery(usersRef,
+          where('username', '>=', queryLower),
+          where('username', '<=', queryLower + '\uf8ff'),
+          limit(20)
+        );
 
-      // Add username results
-      usernameSnapshot.docs.forEach(doc => {
-        if (doc.id !== user?.uid) { // Exclude current user
-          results.set(doc.id, { id: doc.id, ...doc.data() } as UserProfile);
-        }
-      });
+        const usernameSnapshot = await getDocs(usernameQuery);
+        console.log('📊 Username search results:', usernameSnapshot.docs.length);
 
-      setUsers(Array.from(results.values()));
+        // Process username results safely
+        usernameSnapshot.docs.forEach(doc => {
+          try {
+            if (doc.id !== user.uid && doc.exists()) {
+              const userData = doc.data();
+              // Validate required fields exist
+              if (userData && userData.username && userData.name) {
+                results.set(doc.id, { 
+                  id: doc.id, 
+                  ...userData,
+                  // Ensure required fields have defaults
+                  profilePicture: userData.profilePicture || null,
+                  bio: userData.bio || '',
+                  age: userData.age || 0,
+                  interests: userData.interests || []
+                } as UserProfile);
+              }
+            }
+          } catch (docError) {
+            console.error('Error processing user document:', docError);
+          }
+        });
+
+      } catch (usernameError) {
+        console.error('Error in username search:', usernameError);
+      }
+
+      try {
+        // Search by name (with error handling)
+        console.log('🔍 Searching by name...');
+        const nameQuery = firebaseQuery(usersRef, 
+          where('name', '>=', queryLower),
+          where('name', '<=', queryLower + '\uf8ff'),
+          limit(20)
+        );
+
+        const nameSnapshot = await getDocs(nameQuery);
+        console.log('📊 Name search results:', nameSnapshot.docs.length);
+
+        // Process name results safely
+        nameSnapshot.docs.forEach(doc => {
+          try {
+            if (doc.id !== user.uid && doc.exists()) {
+              const userData = doc.data();
+              // Validate required fields exist
+              if (userData && userData.username && userData.name) {
+                results.set(doc.id, { 
+                  id: doc.id, 
+                  ...userData,
+                  // Ensure required fields have defaults
+                  profilePicture: userData.profilePicture || null,
+                  bio: userData.bio || '',
+                  age: userData.age || 0,
+                  interests: userData.interests || []
+                } as UserProfile);
+              }
+            }
+          } catch (docError) {
+            console.error('Error processing user document:', docError);
+          }
+        });
+
+      } catch (nameError) {
+        console.error('Error in name search:', nameError);
+      }
+
+      const finalResults = Array.from(results.values());
+      console.log('✅ Search completed, found', finalResults.length, 'users');
+      setUsers(finalResults);
+
     } catch (error) {
-      console.error('Error searching users:', error);
-      Alert.alert('Error', 'Failed to search users. Please try again.');
+      console.error('❌ Critical error in user search:', error);
+      
+      // Show user-friendly error message
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Search failed. Please try again.', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Search Error', 'Unable to search users. Please check your connection and try again.');
+      }
+      
+      // Reset to empty state
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -359,8 +432,56 @@ export default function ExploreScreen() {
     setShowUserProfile(true);
   };
 
+  const handleLikeProfile = async (targetUserId: string, targetUserName: string) => {
+    if (!user) {
+      ToastAndroid.show('Please sign in to like profiles', ToastAndroid.SHORT);
+      return;
+    }
+
+    try {
+      // Check if already liked
+      const isAlreadyLiked = likedProfiles[targetUserId];
+      
+      if (isAlreadyLiked) {
+        // Unlike the profile - remove notification
+        const { deleteNotificationsByContent } = await import('../utils/notifications');
+        await deleteNotificationsByContent('like', user.uid, targetUserId, undefined);
+        
+        // Update liked profiles state
+        setLikedProfiles(prev => ({ ...prev, [targetUserId]: false }));
+        
+        // Show feedback
+        ToastAndroid.show(`You unliked ${targetUserName}'s profile!`, ToastAndroid.SHORT);
+      } else {
+        // Like the profile - create notification
+        const { createNotification } = await import('../utils/notifications');
+        await createNotification('like', user.uid, targetUserId, undefined, 'profile', `${user.displayName || user.name} liked your profile`);
+        
+        // Update liked profiles state
+        setLikedProfiles(prev => ({ ...prev, [targetUserId]: true }));
+        
+        // Show success feedback
+        ToastAndroid.show(`You liked ${targetUserName}'s profile!`, ToastAndroid.SHORT);
+      }
+    } catch (error) {
+      console.error('Error liking/unliking profile:', error);
+      ToastAndroid.show('Failed to update profile like status. Please try again.', ToastAndroid.SHORT);
+    }
+  };
+
   const renderUserCard = ({ item: user }: { item: UserProfile }) => {
     const { scale, opacity, translateY } = cardAnimations[0];
+    // Ensure we always pass a valid string URI to ImageBackground
+    const getUserImageUri = () => {
+      if (typeof user.profilePictureBase64 === 'string' && user.profilePictureBase64.length > 0) {
+        return `data:image/jpeg;base64,${user.profilePictureBase64}`;
+      }
+      if (typeof (user as any).profilePicture === 'string' && (user as any).profilePicture.trim().length > 0) {
+        return (user as any).profilePicture as string;
+      }
+      const displayName = (user as any).name || (user as any).username || 'User';
+      return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`;
+    };
 
     return (
       <Animated.View
@@ -381,8 +502,7 @@ export default function ExploreScreen() {
         >
           <ImageBackground
             source={{ 
-              uri: user.profilePicture || 
-                `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random` 
+              uri: getUserImageUri()
             }}
             style={styles.cardBackground}
             imageStyle={styles.cardImage}
@@ -454,10 +574,20 @@ export default function ExploreScreen() {
                   <Ionicons name="chatbubble-outline" size={24} color="#FF4B6A" />
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.actionButton, styles.actionButtonPrimary]}
+                  style={[
+                    styles.actionButton, 
+                    likedProfiles[user.id] ? styles.actionButtonLiked : styles.actionButtonPrimary
+                  ]}
+                  onPress={() => handleLikeProfile(user.id, user.name)}
                 >
-                  <Ionicons name="heart-outline" size={24} color="#FFF" />
-                  <Text style={styles.actionButtonText}>Like Profile</Text>
+                  <Ionicons 
+                    name={likedProfiles[user.id] ? "heart" : "heart-outline"} 
+                    size={24} 
+                    color="#FFF" 
+                  />
+                  <Text style={styles.actionButtonText}>
+                    {likedProfiles[user.id] ? 'Liked' : 'Like Profile'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </LinearGradient>
@@ -882,15 +1012,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF4B6A',
     gap: 8,
   },
+  actionButtonLiked: {
+    flex: 1,
+    backgroundColor: '#666',
+    gap: 8,
+  },
   actionButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   emptyContainer: {
     flex: 1,

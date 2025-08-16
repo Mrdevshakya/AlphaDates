@@ -109,7 +109,9 @@ export default function Stories({ stories, onStoryPress, onStoryAdded }: Stories
               <View style={styles.storyImageContainer}>
                 <Image
                   source={{
-                    uri: currentUser.photoURL ||
+                    uri: currentUser.profilePictureBase64 ?
+                      `data:image/jpeg;base64,${currentUser.profilePictureBase64}` :
+                      currentUser.photoURL ||
                       `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName || 'User')}&background=random`,
                   }}
                   style={styles.storyImage}
@@ -153,7 +155,9 @@ export default function Stories({ stories, onStoryPress, onStoryAdded }: Stories
               <View style={styles.storyImageContainer}>
                 <Image
                   source={{
-                    uri: user.profilePicture ||
+                    uri: user.profilePictureBase64 ?
+                      `data:image/jpeg;base64,${user.profilePictureBase64}` :
+                      user.profilePicture ||
                       `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`,
                   }}
                   style={styles.storyImage}
